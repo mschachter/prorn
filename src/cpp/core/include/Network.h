@@ -3,14 +3,12 @@
 #include <vector>
 #include <map>
 
-#include <opencv/cv.h>
-
 #include "clutils.h"
-#include "DataStream.h"
+#include "SimpleSparseMatrix.h"
 
-using namespace cv;
 using namespace std;
 
+typedef unsigned int NetworkId;
 typedef unsigned int UnitId;
 typedef unsigned int WeightId;   //should be a long long
 typedef unsigned int LayerId;
@@ -43,15 +41,6 @@ public:
    virtual float getOutput(UnitId uid);
 };
 
-class DataStreamLayer : public ExternalLayer {
-
-public:
-   DataStreamLayer(DataStream* ds);
-   ~DataStreamLayer();
-
-   bool isExternal();   
-   void update();
-};
 
 class IFLayer : public Layer {
 public:
@@ -76,8 +65,8 @@ public:
 
    /* Non-GPU member variables */
    vector<Unit*> units;
-   SparseMat* weights;   
-   LayerMap layers;  
+   SimpleSparseMatrix<float>* weights;
+   LayerMap layers;
    unsigned int numNonExUnits;
    float totalMem;
    unsigned int numConns;
@@ -122,4 +111,10 @@ protected:
    void allocateMemory();
    void prepareKernel();
 };
+
+extern "C" {
+
+NetworkId create_network();
+
+}
 

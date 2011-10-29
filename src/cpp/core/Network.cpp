@@ -106,18 +106,14 @@ LayerId Network::addLayer(Layer* l)
 void Network::connect(UnitId u1, UnitId u2, float weight)
 {
    if (weights == NULL) initWeights();
-
-   int idx[] = {u1, u2};
-   weights->ref<float>(idx) = weight;
+   weights->set(u1, u2, weight);
 }
 
 void Network::initWeights()
 {
    printf("Initializing weight matrix, don't add any more units!\n");
    if (weights != NULL) delete weights;
-   
-   int sz[] = {units.size(), units.size()};
-   weights = new SparseMat(2, sz, CV_32F); 
+   weights = new SimpleSparseMatrix<float>(units.size(), units.size());
 }
 
 void Network::build()
@@ -221,19 +217,21 @@ void Network::buildWeightData()
    //for each a given unit
    vector<UnitId>* weightIndicies = new vector<UnitId>[units.size()];   
    numConns = 0;
-   SparseMatConstIterator it = weights->begin(), it_end = weights->end();
-   for(; it != it_end; ++it) {
-      const SparseMat::Node* anode = it.node();
-      const int* indx = anode->idx;
-      float wval = weights->value<float>(anode->idx);
+   UnitId k;
+   UnitId* indx;
+   vector<ssm_index*>* conn_indicies;
+   for (k = 0; k < conn_indicies->size(); k++) {
+	  indx = (*conn_indicies)[k];
       int pre = indx[0];
-      int post = indx[1];      
+      int post = indx[1];
+      float wval = weights->get(pre, post);
       printf("buildWeightData: pre=%d, post=%d, wval=%f\n", pre, post, wval);
       
       //add to weight index
       weightIndicies[post].push_back((UnitId) pre);
       numConns++;
    }
+   delete conn_indicies;
 
    //construct weightArr and weightIndexRange
    if (weightArr != NULL) delete weightArr;
@@ -242,11 +240,9 @@ void Network::buildWeightData()
    weightIndex = new UnitId[numConns];
    if (weightIndexRange != NULL) delete weightIndexRange;
    weightIndexRange = new unsigned int*[numNonExUnits];
-   UnitId k;
    for (k = 0; k < numNonExUnits; k++)  weightIndexRange[k] = NULL;
 
-   unsigned int cindx, gpuIndx, nwts, m;   
-   int windx[2];
+   unsigned int cindx, gpuIndx, nwts, m;
    cindx = 0;
    for (k = 0; k < units.size(); k++) {
       nwts = weightIndicies[k].size();
@@ -257,9 +253,7 @@ void Network::buildWeightData()
          weightIndexRange[gpuIndx][1] = cindx + nwts - 1;
          for (m = 0; m < nwts; m++) {
             weightIndex[cindx] = weightIndicies[k][m];
-            windx[0] = m;
-            windx[1] = k;
-            weightArr[cindx] = weights->value<float>(windx);
+            weightArr[cindx] = weights->get(m, k);
             cindx++;
          }
       }
@@ -317,4 +311,10 @@ void Network::prepareKernel()
    clSetKernelArg(*clKernel, 7, sizeof(cl_mem), clNewOutput);
    clSetKernelArg(*clKernel, 8, sizeof(cl_mem), &stepSize);
 }
+
+NetworkId create_network()
+{
+	return 22;
+}
+
 
