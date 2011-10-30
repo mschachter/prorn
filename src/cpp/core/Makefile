@@ -1,7 +1,10 @@
 
+CL_INCLUDE_DIR=/opt/AMDAPP/include
+CL_LIB_DIR=/opt/AMDAPP/lib/x86_64
+
 CC=g++
-INC = -Iinclude -I/usr/local/include -I/usr/include
-LIB = -lOpenCL
+INC = -Iinclude -I/usr/local/include -I/usr/include -I$(CL_INCLUDE_DIR)
+LIB = -L$(CL_LIB_DIR) -lOpenCL 
 CFLAGS = -c -fPIC
 AR = ar
 ARFLAGS = -rcsv
