@@ -9,15 +9,16 @@ CFLAGS = -c -fPIC
 AR = ar
 ARFLAGS = -rcsv
 
-LIBNAME = libneurogoats
+PROJECT_NAME=prorn
+LIBNAME = lib$(PROJECT_NAME)
 LIBFILE = $(LIBNAME).a
-SOFILE =  $(LIBNAME).so.1.0
+SOFILE =  $(LIBNAME).so
 
 OBJECTS = Network.o clutils.o
 
-all: ng
+all: $(PROJECT_NAME)
 
-ng: $(OBJECTS)
+$(PROJECT_NAME): $(OBJECTS)
 	$(AR) $(ARFLAGS) $(LIBFILE) $(OBJECTS)
 	ranlib $(LIBFILE)
 	$(CC) -shared $(LIB) -o $(SOFILE) $(OBJECTS)
