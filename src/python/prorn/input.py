@@ -7,7 +7,8 @@ class NetworkInputStream():
     
     def next(self):
         return None
-    
+
+
 class CsvInputStream(NetworkInputStream):
     
     def __init__(self, shape, file_name, in_memory=True):        
@@ -55,3 +56,20 @@ class CsvInputStream(NetworkInputStream):
             self.file_handle.close()
         else:
             del self.data
+
+
+
+class ArrayInputStream(NetworkInputStream):
+    
+    def __init__(self, nparray):
+        self.data = nparray
+        ndim = nparray.shape[1]
+        self.shape = [1, ndim]
+        self.row = 0
+        
+    def next(self):
+        if self.row < self.data.shape[0]:
+            a = self.data[self.row, :].squeeze()
+            self.row += 1
+            return a
+        return None

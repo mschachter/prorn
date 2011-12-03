@@ -3,7 +3,7 @@ import networkx as nx
 
 from prorn.input import CsvInputStream
 
-class ReservoirNetwork:
+class EchoStateNetwork:
     
     def __init__(self):
         self.net = nx.DiGraph()
@@ -19,6 +19,9 @@ class ReservoirNetwork:
         self.Win = None #input weight matrix
         self.x = None #state vector
         
+    def set_stim_start_time(self, start_time):
+        self.stim_start_time = start_time    
+    
     def set_input(self, input_stream):
         """ Set an initialized input stream to read from. """
         self.input_stream = input_stream
@@ -43,8 +46,28 @@ class ReservoirNetwork:
         """ Connect an index in the input to a node """
         iname = self.input_index2node[input_index]
         self.net.add_edge(iname, n_id, weight=weight)
-                
+    
+    def rescale_weights(self, frac=0.75):
+        """ Rescale all weights so that they range between (-frac, frac) """
         
+        max_weight = 0.0
+        for e1,e2 in self.net.edges():
+            w = abs(self.net[e1][e2]['weight'])
+            if w > max_weight:
+                max_weight = w
+        
+        for e1,e2 in self.net.edges():
+            w = self.net[e1][e2]['weight']
+            self.net[e1][e2]['weight'] = (w / max_weight)*frac
+                
+    def num_internal_nodes(self):
+        return len(self.net.nodes()) - self.num_input_nodes()
+    
+    def num_input_nodes(self):
+        x = np.array([1 for n in self.net.nodes() if 'is_input' in self.net.node[n]])
+        return int(x.sum())
+        
+    
     def compile(self):
         """ Create state vector and weight matrix. """
         
@@ -103,7 +126,7 @@ class ReservoirNetwork:
         
         #get input
         i_input = 0.0
-        if self.input_stream is not None:            
+        if self.input_stream is not None and t >= self.stim_start_time:            
             input = self.input_stream.next()
             if input is not None:
                 #compute weighted input for each node
