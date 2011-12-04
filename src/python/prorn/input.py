@@ -73,3 +73,13 @@ class ArrayInputStream(NetworkInputStream):
             self.row += 1
             return a
         return None
+    
+class NullInputStream(NetworkInputStream):
+    
+    def __init__(self, shape):
+        self.shape = shape
+    
+    def next(self):
+        return None
+    
+    

@@ -66,7 +66,15 @@ class EchoStateNetwork:
     def num_input_nodes(self):
         x = np.array([1 for n in self.net.nodes() if 'is_input' in self.net.node[n]])
         return int(x.sum())
+    
+    def to_hdf5(self, f, key):
+        """ Write this object to an hdf5 file """
         
+        grp = f.create_group(key)
+        grp['W'] = self.W
+        grp['Win'] = self.Win        
+        grp.attrs['type'] = '%s.%s' % (self.__module__, self.__class__.__name__)
+    
     
     def compile(self):
         """ Create state vector and weight matrix. """
@@ -121,26 +129,18 @@ class EchoStateNetwork:
         if not self.compiled:
             self.compile()
         
-        #print 't=%d' % self.t
-        #print 'state=%s' % str(self.x)
-        
         #get input
         i_input = 0.0
-        if self.input_stream is not None and t >= self.stim_start_time:            
+        if self.input_stream is not None and self.t >= self.stim_start_time:            
             input = self.input_stream.next()
             if input is not None:
-                #compute weighted input for each node
-                i_input = np.dot(self.Win, input)                
-                #print 'input=%s' % str(input)
-        #print 'i_input=%s' % str(i_input)
+                #compute weighted input for each node                
+                i_input = np.dot(self.Win, input).squeeze()                
                 
         #compute weighted input for each node
         i_internal = np.dot(self.W, self.x)
-        #print 'i_internal=%s' % str(i_internal)
-        
-        self.x = i_input + i_internal
-        #print 'newstate=%s' % str(self.x)
-        
+                
+        self.x = i_input + i_internal           
         self.t += 1
         
     

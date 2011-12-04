@@ -5,70 +5,74 @@ import matplotlib.pyplot as plt
 from prorn.network import *
 from prorn.input import *
 from prorn.stim import *
+from prorn.sim import *
 
 def create_inputless_net():
     
-    rnet = EchoStateNetwork()
+    net = EchoStateNetwork()
         
-    rnet.create_node(1, initial_state=np.abs(np.random.randn()))
-    rnet.create_node(2, initial_state=np.abs(np.random.randn()))
-    rnet.create_node(3, initial_state=np.abs(np.random.randn()))
+    net.create_node(1, initial_state=np.abs(np.random.randn()))
+    net.create_node(2, initial_state=np.abs(np.random.randn()))
+    net.create_node(3, initial_state=np.abs(np.random.randn()))
     
-    rnet.connect_nodes(1, 2, 1.0)
-    #rnet.connect_nodes(1, 3, 0.25)
-    rnet.connect_nodes(2, 3, 1.1)
-    rnet.connect_nodes(3, 1, 0.75)
+    net.connect_nodes(1, 2, 1.0)
+    #net.connect_nodes(1, 3, 0.25)
+    net.connect_nodes(2, 3, 1.1)
+    net.connect_nodes(3, 1, 0.75)
 
-    rnet.compile()
+    net.compile()
     
-    return rnet
+    return net
 
-def create_fullyconnected_net():
+def create_fullyconnected_net(rescale_frac=0.75):
     
-    rnet = EchoStateNetwork()
+    net = EchoStateNetwork()
     
     for n in [1, 2, 3]:        
-        rnet.create_node(n, initial_state=np.abs(np.random.randn()))
+        net.create_node(n, initial_state=np.abs(np.random.randn()))
         
     for n1 in [1, 2, 3]:
         for n2 in [1, 2, 3]:
-            rnet.connect_nodes(n1, n2, np.random.randn())
+            net.connect_nodes(n1, n2, np.random.randn())
     
-    rnet.rescale_weights(0.95)
+    net.create_input(0)
+    net.connect_input(0, 1, np.abs(np.random.randn()))
     
-    return rnet
+    net.rescale_weights(rescale_frac)    
+    
+    return net
 
     
     
 
 def create_3node_net(input_file='/home/cheese63/test.csv'):
     
-    rnet = EchoStateNetwork()
+    net = EchoStateNetwork()
 
-    rnet.create_node(1)
-    rnet.create_node(2)
-    rnet.create_node(3)
+    net.create_node(1)
+    net.create_node(2)
+    net.create_node(3)
     
-    rnet.connect_nodes(1, 2, -0.5)
-    rnet.connect_nodes(1, 3, -0.25)
-    rnet.connect_nodes(2, 3, 0.9)
-    rnet.connect_nodes(3, 1, -0.037)
+    net.connect_nodes(1, 2, -0.5)
+    net.connect_nodes(1, 3, -0.25)
+    net.connect_nodes(2, 3, 0.9)
+    net.connect_nodes(3, 1, -0.037)
     
     cis = CsvInputStream([1, 3], input_file)
     
-    rnet.set_input(cis)    
-    rnet.create_input(0)
-    rnet.create_input(1)
-    rnet.create_input(2)
+    net.set_input(cis)    
+    net.create_input(0)
+    net.create_input(1)
+    net.create_input(2)
 
-    rnet.connect_input(0, 1, 0.25)
-    rnet.connect_input(1, 2, 0.12)
-    rnet.connect_input(2, 3, 0.72)
+    net.connect_input(0, 1, 0.25)
+    net.connect_input(1, 2, 0.12)
+    net.connect_input(2, 3, 0.72)
     
 
-    rnet.compile()
+    net.compile()
     
-    return rnet
+    return net
 
 
 
@@ -90,6 +94,54 @@ def show_stims():
     plt.show()
 
     
+def run_example_net():
+    
+    net = create_fullyconnected_net()
+    stims = read_stims_from_file('/home/cheese63/git/prorn/data/stims.h5')    
+    net_stims = run_sim(net, stims)
+    
+    return net_stims
+
+            
+def run_many_nets(output_file, num_nets=5, rescale_frac=0.75):
+    
+    stims = read_stims_from_file('/home/cheese63/git/prorn/data/stims.h5')
+    
+    f = h5py.File(output_file, 'w')
+    
+    nis = NullInputStream([1, 1])
+    
+    burn_time = 100
+    post_stim_time = 20
+    pre_stim_record = 10 
+    start_record = burn_time - pre_stim_record
+    stim_start = burn_time - start_record #relative to recording time start
+    
+    for k in range(num_nets):
+        
+        print 'Running net %d...' % k
+        net_key = 'net_%d' % k
+        net = create_fullyconnected_net(rescale_frac=rescale_frac)
+        net_stims = run_sim(net, stims,
+                             burn_time=burn_time, post_stim_time=post_stim_time, start_record=start_record)
+         
+        net.set_input(nis)
+        net.compile()
+        net.to_hdf5(f, net_key)
+         
+        for stim_key,net_state in net_stims.iteritems():
+            
+            stimlen = stims[stim_key].shape[1]
+            stim_end = stim_start + stimlen            
+            f[net_key][stim_key] = net_state
+            f[net_key][stim_key].attrs['stim_start'] = stim_start
+            f[net_key][stim_key].attrs['stim_end'] = stim_end
+    
+    f.close()
     
     
     
+    
+    
+                
+

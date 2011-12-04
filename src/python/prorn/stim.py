@@ -71,7 +71,7 @@ class StimPrototype:
         return np.array(stims)
 
 
-def generate_prototype(num_bumps, stim_len, padding=1, max_height=3, mean_width=0.1):
+def generate_prototype(num_bumps, stim_len, padding=1, max_height=1, num_heights=3, mean_width=0.1):
     
     bump_times = []
     bump_heights = []
@@ -80,7 +80,8 @@ def generate_prototype(num_bumps, stim_len, padding=1, max_height=3, mean_width=
         tbump = np.random.randint(stim_len-2*padding) + padding
         if tbump not in bump_times:
             #generate height and width
-            bheight = np.random.randint(max_height+1)
+            bheight = np.random.randint(num_heights+1)
+            bheight /= max_height            
             bstd = mean_width*np.abs(np.random.randn())
             bump_heights.append(bheight)
             bump_widths.append(bstd)
@@ -94,14 +95,14 @@ def generate_prototype(num_bumps, stim_len, padding=1, max_height=3, mean_width=
     return sp
 
 
-def generate_prototypes(num_stims, stim_len=10, max_bump_frac=0.50, max_height=4, mean_width=0.1):
+def generate_prototypes(num_stims, stim_len=10, max_bump_frac=0.50, num_heights=3, max_height=1, mean_width=0.1):
     
     bump_time_combos = {}
     prototypes = []
     while len(prototypes) < num_stims:        
         num_bumps = int(np.ceil(max_bump_frac*np.random.randint(stim_len-1)) + 1)
         #randomly generate bumps
-        sp = generate_prototype(num_bumps, stim_len, max_height=max_height, mean_width=mean_width)        
+        sp = generate_prototype(num_bumps, stim_len, max_height=max_height, num_heights=num_heights, mean_width=mean_width)        
         btc_key = tuple(sp.bump_times)
         if btc_key not in bump_time_combos:
             bump_time_combos[btc_key] = True
