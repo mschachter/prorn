@@ -72,6 +72,8 @@ class StimPrototype:
 
 
 def generate_prototype(num_bumps, stim_len, padding=1, max_height=1, num_heights=3, mean_width=0.1):
+    """ Construct the prototype for a random stimulus """
+    
     
     bump_times = []
     bump_heights = []

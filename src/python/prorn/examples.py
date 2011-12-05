@@ -103,11 +103,11 @@ def run_example_net():
     return net_stims
 
             
-def run_many_nets(output_file, num_nets=5, rescale_frac=0.75):
+def run_many_nets(output_file, num_nets=5, rescale_frac=0.75, index_offset=0):
     
     stims = read_stims_from_file('/home/cheese63/git/prorn/data/stims.h5')
     
-    f = h5py.File(output_file, 'w')
+    f = h5py.File(output_file, 'a')
     
     nis = NullInputStream([1, 1])
     
@@ -119,8 +119,9 @@ def run_many_nets(output_file, num_nets=5, rescale_frac=0.75):
     
     for k in range(num_nets):
         
-        print 'Running net %d...' % k
-        net_key = 'net_%d' % k
+        net_num =k + index_offset
+        print 'Running net %d...' % net_num
+        net_key = 'net_%d' % net_num
         net = create_fullyconnected_net(rescale_frac=rescale_frac)
         net_stims = run_sim(net, stims,
                              burn_time=burn_time, post_stim_time=post_stim_time, start_record=start_record)

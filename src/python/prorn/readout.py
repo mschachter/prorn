@@ -4,6 +4,7 @@ import h5py
 
 from scikits.learn.linear_model import LogisticRegression
 from scikits.learn.svm import SVC
+from scikits.statsmodels.discrete.discrete_model import MNLogit
 
 from pybrain.datasets import ClassificationDataSet
 from pybrain.utilities import percentError
@@ -44,8 +45,7 @@ def get_samples(net_file, net_key, readout_window):
             for rt in readout_times:
                 readout_state = net_state[rt, :].squeeze()
                 samps.append((readout_state, stim_class))
-    f.close()
-    print '# of samples: %d' % len(samps)    
+    f.close()        
     np.random.shuffle(samps)
     return (samps, all_stim_classes, Ninternal)
 
@@ -64,22 +64,36 @@ def train_readout_nn(net_file, net_key, readout_window=np.arange(0, 1), num_hidd
     tstdata._convertToOneOfMany()
     
     fnn = buildNetwork( trndata.indim, num_hidden, trndata.outdim, hiddenclass=TanhLayer, outclass=SoftmaxLayer)
-    trainer = BackpropTrainer(fnn, dataset=trndata, momentum=0.1, verbose=True, weightdecay=0.01)
+    trainer = BackpropTrainer(fnn, dataset=trndata, momentum=0.1, verbose=False, weightdecay=0.01)
     
     test_errors = []
+    num_slope_samps = 10
+    slope = 0.0
     
     while True:
+        
+        if len(test_errors) >= num_slope_samps:
+            coef = np.polyfit(np.arange(num_slope_samps), test_errors[-num_slope_samps:], 1)
+            slope = coef[0]
+            if slope > 0.0:
+                print 'Test error slope > 0.0, stopping'
+                break
+        
         trainer.train()        
         train_err = percentError( trainer.testOnClassData(), trndata['class'])
         test_err = percentError( trainer.testOnClassData(dataset=tstdata), tstdata['class'])
-        print "Iteration: %d, train_err=%0.4f, test_err=%0.4f" % (trainer.totalepochs, train_err, test_err)
+        print "Iteration: %d, train_err=%0.4f, test_err=%0.4f, slope=%0.4f" % (trainer.totalepochs, train_err, test_err, slope)
         test_errors.append(test_err)
+        
+    return (train_err, test_err, fnn, trainer)
 
 
 
-def train_readout_logit(net_file, net_key, readout_window=np.arange(3, 10)):
+def train_readout_logit(net_file, net_key, readout_window=np.arange(0, 1)):
     
     (samps, all_stim_classes, Ninternal) = get_samples(net_file, net_key, readout_window)
+    
+    losses = []
     
     for stim_class in all_stim_classes:
         
@@ -98,14 +112,20 @@ def train_readout_logit(net_file, net_key, readout_window=np.arange(3, 10)):
         
         test_pred = logr.predict(test_data[:, 0:Ninternal])
         pred_diff = np.abs(test_pred - test_data[:, -1])
-        zero_one_loss = pred_diff.sum() / test_data.shape[0] 
+        zero_one_loss = pred_diff.sum() / test_data.shape[0]
+        losses.append(zero_one_loss) 
         
-        print 'Stim class %d loss: %0.3f' % (stim_class, zero_one_loss)
+        #print 'Stim class %d loss: %0.3f' % (stim_class, zero_one_loss)
+        
+    losses = np.array(losses)
+    return (losses.mean(), losses.std())
         
         
 def train_readout_svm(net_file, net_key, readout_window=np.arange(3, 10)):
     
     (samps, all_stim_classes, Ninternal) = get_samples(net_file, net_key, readout_window)
+    
+    losses = []
     
     for stim_class in all_stim_classes:
         
@@ -124,9 +144,12 @@ def train_readout_svm(net_file, net_key, readout_window=np.arange(3, 10)):
         
         test_pred = svc.predict(test_data[:, 0:Ninternal])
         pred_diff = np.abs(test_pred - test_data[:, -1])
-        zero_one_loss = pred_diff.sum() / test_data.shape[0] 
-        
-        print 'Stim class %d loss: %0.3f' % (stim_class, zero_one_loss)
+        zero_one_loss = pred_diff.sum() / test_data.shape[0]
+        losses.append(zero_one_loss)
+        #print 'Stim class %d loss: %0.3f' % (stim_class, zero_one_loss)
+                
+    losses = np.array(losses)
+    return (losses.mean(), losses.std())
     
     
         

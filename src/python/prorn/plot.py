@@ -1,5 +1,6 @@
 import os
 import time
+import operator
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ import h5py
 
 from prorn.stim import StimPrototype
 from prorn.readout import get_samples
+from prorn.analysis import get_perfs
 
 
 
@@ -188,6 +190,77 @@ def plot_readout_data(net_file, net_key, readout_window):
     
     plt.show()
     
+
+def plot_perf_histograms(net_files):
+    
+    perfs = get_perfs(net_files)    
+    indx = np.isnan(perfs[:, 0]) | np.isnan(perfs[:, 1]) | np.isnan(perfs[:, 2])
+    
+    plt.clf()
+    fig = plt.gcf()
+    
+    ax = fig.add_subplot(3, 1, 1)
+    ax.hist(perfs[indx == False, 0], bins=25)
+    ax.set_title('NN Performance')
+    
+    ax = fig.add_subplot(3, 1, 2)
+    ax.hist(perfs[indx == False, 1], bins=25)
+    ax.set_title('Logit Performance')
+    
+    ax = fig.add_subplot(3, 1, 3)
+    ax.hist(perfs[indx == False, 2], bins=25)
+    ax.set_title('Entropy Ratio')
+    
+    plt.show()
+    
+
+def plot_entropy_ratio_vs_perf(net_files):
+
+    (perfs, index2keys) = get_perfs(net_files)    
+    indx = np.isnan(perfs[:, 0]) | np.isnan(perfs[:, 1]) | np.isnan(perfs[:, 2])
+    nn_perf = perfs[indx == False, 0].squeeze()
+    logit_perf = perfs[indx == False, 1].squeeze()
+    entropy_ratio = perfs[indx == False, 2].squeeze()
+    
+    nn_list = zip(nn_perf, index2keys)
+    nn_list.sort(key=operator.itemgetter(0), reverse=True)
+    
+    logit_list = zip(logit_perf, index2keys)
+    logit_list.sort(key=operator.itemgetter(0), reverse=True)
+    
+    er_list = zip(entropy_ratio, index2keys)
+    er_list.sort(key=operator.itemgetter(0))
+    
+    print '--------- Top 50 ---------'
+    print 'NN\t\t\tLogit\t\t\tEntropy Ratio'
+    for k in range(50):
+        print '%d) %0.2f,%s\t%0.0f,%s\t%0.2f,%s' % ((k+1), nn_list[k][0], nn_list[k][1], \
+                                                    logit_list[k][0], logit_list[k][1], \
+                                                    er_list[k][0], er_list[k][1])
+    
+        
+    plt.clf()
+    fig = plt.gcf()
+
+    ax = fig.add_subplot(3, 1, 1)
+    ax.plot(logit_perf, nn_perf, 'ko')
+    plt.xlabel('Logit Perf')
+    plt.ylabel('NN Perf')
+    plt.axis('tight')
+
+    ax = fig.add_subplot(3, 1, 2)
+    ax.plot(entropy_ratio, nn_perf, 'go')
+    plt.xlabel('Entropy Ratio')
+    plt.ylabel('NN Perf')
+    plt.axis('tight')
+    
+    ax = fig.add_subplot(3, 1, 3)
+    ax.plot(entropy_ratio, logit_perf, 'bo')
+    plt.xlabel('Entropy Ratio')
+    plt.ylabel('Logit Perf')
+    plt.axis('tight')
+    
+    plt.show()
     
 
 def save_to_png(fig, output_file):
