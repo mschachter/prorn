@@ -4,14 +4,15 @@ import operator
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 import h5py
 
-from prorn.stim import StimPrototype
+from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
-from prorn.analysis import get_perfs
+from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca
 
 
 
@@ -191,75 +192,274 @@ def plot_readout_data(net_file, net_key, readout_window):
     plt.show()
     
 
-def plot_perf_histograms(net_files):
+def plot_perf_histograms(pdata, filter=True):
     
-    perfs = get_perfs(net_files)    
-    indx = np.isnan(perfs[:, 0]) | np.isnan(perfs[:, 1]) | np.isnan(perfs[:, 2])
+    if filter:
+        pdata = filter_perfs(pdata)
+    
+    nn_perfs = np.array([p.nn_perf for p in pdata])
+    logit_perfs = np.array([p.logit_perf for p in pdata])
+    ers = np.array([p.entropy_ratio for p in pdata])
     
     plt.clf()
-    fig = plt.gcf()
     
+    fig = plt.gcf()    
     ax = fig.add_subplot(3, 1, 1)
-    ax.hist(perfs[indx == False, 0], bins=25)
+    ax.hist(nn_perfs, bins=25)
     ax.set_title('NN Performance')
+    plt.axis('tight')
     
     ax = fig.add_subplot(3, 1, 2)
-    ax.hist(perfs[indx == False, 1], bins=25)
+    ax.hist(logit_perfs, bins=25)
     ax.set_title('Logit Performance')
+    plt.axis('tight')
     
     ax = fig.add_subplot(3, 1, 3)
-    ax.hist(perfs[indx == False, 2], bins=25)
+    ax.hist(ers, bins=25)
     ax.set_title('Entropy Ratio')
+    plt.axis('tight')
     
     plt.show()
     
 
-def plot_entropy_ratio_vs_perf(net_files):
+def plot_entropy_ratio_vs_perf(pdata, filter=True):
+    
+    if filter:
+        pdata = filter_perfs(pdata)
 
-    (perfs, index2keys) = get_perfs(net_files)    
-    indx = np.isnan(perfs[:, 0]) | np.isnan(perfs[:, 1]) | np.isnan(perfs[:, 2])
-    nn_perf = perfs[indx == False, 0].squeeze()
-    logit_perf = perfs[indx == False, 1].squeeze()
-    entropy_ratio = perfs[indx == False, 2].squeeze()
-    
-    nn_list = zip(nn_perf, index2keys)
-    nn_list.sort(key=operator.itemgetter(0), reverse=True)
-    
-    logit_list = zip(logit_perf, index2keys)
-    logit_list.sort(key=operator.itemgetter(0), reverse=True)
-    
-    er_list = zip(entropy_ratio, index2keys)
-    er_list.sort(key=operator.itemgetter(0))
-    
-    print '--------- Top 50 ---------'
-    print 'NN\t\t\tLogit\t\t\tEntropy Ratio'
-    for k in range(50):
-        print '%d) %0.2f,%s\t%0.0f,%s\t%0.2f,%s' % ((k+1), nn_list[k][0], nn_list[k][1], \
-                                                    logit_list[k][0], logit_list[k][1], \
-                                                    er_list[k][0], er_list[k][1])
-    
-        
+    nn_perfs = np.array([p.nn_perf for p in pdata])
+    logit_perfs = np.array([p.logit_perf for p in pdata])
+    entropy_ratios = np.array([p.entropy_ratio for p in pdata])
+            
     plt.clf()
     fig = plt.gcf()
-
-    ax = fig.add_subplot(3, 1, 1)
-    ax.plot(logit_perf, nn_perf, 'ko')
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(logit_perfs, nn_perfs / 100.0, 'o', markerfacecolor='gray')
     plt.xlabel('Logit Perf')
     plt.ylabel('NN Perf')
     plt.axis('tight')
 
-    ax = fig.add_subplot(3, 1, 2)
-    ax.plot(entropy_ratio, nn_perf, 'go')
+    fig = plt.figure()
+    ax = fig.add_subplot(2, 1, 1)
+    ax.plot(entropy_ratios, nn_perfs, 'go')
     plt.xlabel('Entropy Ratio')
     plt.ylabel('NN Perf')
     plt.axis('tight')
     
-    ax = fig.add_subplot(3, 1, 3)
-    ax.plot(entropy_ratio, logit_perf, 'bo')
+    ax = fig.add_subplot(2, 1, 2)
+    ax.plot(entropy_ratios, logit_perfs, 'bo')
     plt.xlabel('Entropy Ratio')
     plt.ylabel('Logit Perf')
     plt.axis('tight')
     
+    plt.show()
+
+def plot_top100_weights_cov(pdata):
+
+    (weights, wcov, evals, evecs, proj, nn_perfs) = top100_weight_pca(pdata)
+    
+    plt.clf()
+    fig = plt.gcf()
+    for k in range(9):
+        ax = fig.add_subplot(3, 3, k+1)
+        weig = evecs[k].reshape([3, 3])
+        wmax = np.abs(weig).max()
+        ax.imshow(weig, interpolation='nearest', cmap=cm.jet, vmin=-wmax, vmax=wmax)
+        ax.set_title('%0.4f' % evals[k])
+    
+    wcov_nodiag = wcov
+    for k in range(9):
+        wcov_nodiag[k, k] = 0.0
+    fig = plt.figure()
+    wcovmax = np.abs(wcov_nodiag).max()
+    ax = fig.add_subplot(1, 1, 1)
+    res = ax.imshow(wcov_nodiag, interpolation='nearest', cmap=cm.jet, vmin=-wcovmax, vmax=wcovmax)
+    fig.colorbar(res)
+    ax.set_title('Weight Covariance (diagonal removed)')
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(proj[:, 0], proj[:, 1], nn_perfs)
+    ax.set_title('PCA Weight Projection vs NN Perf')
+        
+    plt.show()
+     
+
+def plot_top_100_weights(pdata, filter=True, rootdir='/home/cheese63/git/prorn/data'):
+    if filter:
+        pdata = filter_perfs(pdata)
+        
+    pdata.sort(key=operator.attrgetter('nn_perf'))
+    weights = []
+    for p in pdata[0:100]:
+        fname = os.path.join(rootdir, p.file_name)
+        net_key = p.net_key
+        f = h5py.File(fname, 'r')
+        W = np.array(f[net_key]['W'])
+        weights.append(W)        
+        f.close()
+    
+    weights = np.array(weights)
+    
+    wmean = weights.mean(axis=0).squeeze()
+    wstd = weights.std(axis=0).squeeze()
+    
+    plt.clf()
+    fig = plt.gcf()
+    
+    perrow = 10
+    percol = 10
+    
+    fig = plt.gcf()    
+    for k in range(100):
+        #r = np.floor(k / perrow) + 1
+        #c = (k % percol) + 1
+        ax = fig.add_subplot(perrow, percol, k)
+        ax.imshow(weights[k, :, :], interpolation='nearest', vmin=-1.0, vmax=1.0, cmap=cm.jet)
+        plt.xticks([], [])
+        plt.yticks([], [])
+        
+        
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 2, 1)
+    res = ax.imshow(wmean, interpolation='nearest', vmin=-1.0, vmax=1.0, cmap=cm.jet)
+    ax.set_title('Mean weights for top 100')
+    fig.colorbar(res)
+    
+    ax = fig.add_subplot(1, 2, 2)
+    res = ax.imshow(wstd, interpolation='nearest', cmap=cm.jet)
+    fig.colorbar(res)
+    ax.set_title('Std of weights for top 100')
+    
+    fig = plt.figure()
+    for k in range(9):
+        r = np.floor(k / 3)
+        c = k % 3
+        wvals = weights[:, r, c].squeeze()
+        
+        ax = fig.add_subplot(3, 3, k+1)
+        ax.hist(wvals, bins=15)
+        ax.set_title('Weight (%d, %d)' % (r, c))
+        plt.axis('tight')
+    
+    plt.show()
+
+
+def plot_eigenvalues_vs_perf(pdata, filter=True):
+    
+    if filter:
+        pdata = filter_perfs(pdata)
+        
+    nn_perfs = np.array([p.nn_perf for p in pdata])
+    logit_perfs = np.array([p.logit_perf for p in pdata])
+        
+    ev1 = []
+    ev2 = []
+    ev3 = []
+    for p in pdata:
+        ev1.append([p.eigen_values[0].real, p.eigen_values[0].imag])
+        ev2.append([p.eigen_values[1].real, p.eigen_values[1].imag])
+        ev3.append([p.eigen_values[2].real, p.eigen_values[2].imag])
+    ev1 = np.array(ev1)
+    ev2 = np.array(ev2)
+    ev3 = np.array(ev3)
+    
+    ev1_mod = np.sqrt((ev1**2).sum(axis=1))
+    ev2_mod = np.sqrt((ev2**2).sum(axis=1))
+    ev3_mod = np.sqrt((ev3**2).sum(axis=1))
+    
+    plt.clf()
+    
+    maxev = max([ev1_mod.max(), ev2_mod.max(), ev3_mod.max()])
+    minev = min([ev1_mod.min(), ev2_mod.min(), ev3_mod.min()])
+    fig = plt.gcf()
+    ax = fig.add_subplot(3, 1, 1)
+    ax.hist(ev1[:, 0], facecolor='orange', bins=15)
+    plt.xlim([-minev, maxev])
+    ax.set_title('$|\lambda_1|$', fontsize=24)
+    ax = fig.add_subplot(3, 1, 2)
+    ax.hist(ev2[:, 0], facecolor='orange', bins=15)
+    plt.xlim([-minev, maxev])
+    ax.set_title('$|\lambda_2|$', fontsize=24)
+    ax = fig.add_subplot(3, 1, 3)
+    ax.hist(ev3[:, 0], facecolor='orange', bins=15)
+    plt.xlim([-minev, maxev])
+    ax.set_title('$|\lambda_3|$', fontsize=24)    
+    
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(3, 1, 1)
+    ax.plot(ev1_mod, nn_perfs, 'ro')
+    ax.set_title('Eigenvalue 1')
+    plt.xlabel('|e1|')
+    plt.ylabel('NN Perf')
+    plt.axis('tight')
+    
+    ax = fig.add_subplot(3, 1, 2)
+    ax.plot(ev2_mod, nn_perfs, 'ro')
+    ax.set_title('Eigenvalue 2')
+    plt.xlabel('|e2|')
+    plt.ylabel('NN Perf')
+    plt.axis('tight')
+    
+    ax = fig.add_subplot(3, 1, 3)
+    ax.plot(ev3_mod, nn_perfs, 'ro')
+    ax.set_title('Eigenvalue 3')
+    plt.xlabel('|e3|')
+    plt.ylabel('NN Perf')
+    plt.axis('tight')
+    
+    
+    fig = plt.figure()        
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(ev1[:, 0], ev1[:, 1], nn_perfs, 'ko')
+    ax.set_title('Eigenvalue 1')
+    plt.xlabel('Real')
+    plt.ylabel('Imag')
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(ev2[:, 0], ev2[:, 1], nn_perfs, 'ko')
+    ax.set_title('Eigenvalue 2')
+    plt.xlabel('Real')
+    plt.ylabel('Imag')
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(ev3[:, 0], ev3[:, 1], nn_perfs, 'ko')
+    ax.set_title('Eigenvalue 3')
+    plt.xlabel('Real')
+    plt.ylabel('Imag')
+
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(ev1_mod, ev2_mod, nn_perfs, 'go')    
+    plt.xlabel('|e1|')
+    plt.ylabel('|e2|')
+        
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(ev1[:, 0], ev2[:, 0], nn_perfs, 'ro')    
+    plt.xlabel('real(e1)')
+    plt.ylabel('real(e2)')
+
+    plt.show()
+
+def plot_stim_pca(stim_file):
+    
+    (stims, stim_proj, class_indx) = stim_pca(stim_file)
+    
+    clrs = ['r', 'g', 'b', 'k', 'c']
+    stim_classes = np.unique(class_indx)
+    
+    plt.clf()
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    for k,sc in enumerate(stim_classes):
+        sc_indx = class_indx == sc
+        ax.scatter(stim_proj[sc_indx, 0], stim_proj[sc_indx, 1], stim_proj[sc_indx, 2], c=clrs[k])       
+    ax.set_title('3D PCA Projected Stimuli')
+        
     plt.show()
     
 

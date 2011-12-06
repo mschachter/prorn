@@ -12,6 +12,7 @@ from pybrain.tools.shortcuts import buildNetwork
 from pybrain.supervised.trainers import BackpropTrainer
 from pybrain.structure.modules import SoftmaxLayer, TanhLayer
 
+from prorn.stim import stim_pca
 
 def get_samples(net_file, net_key, readout_window):
     
@@ -150,6 +151,47 @@ def train_readout_svm(net_file, net_key, readout_window=np.arange(3, 10)):
                 
     losses = np.array(losses)
     return (losses.mean(), losses.std())
+
+
+def train_pca_stim_nn(stim_file):
     
+    (stims, stim_proj, class_index) = stim_pca(stim_file)
+    stim_classes = np.unique(class_index)
+    
+    alldata = ClassificationDataSet(3, 1, nb_classes=len(stim_classes))
+    nsamps = stim_proj.shape[0]
+    for k in range(nsamps):
+        alldata.addSample(stim_proj[k, :].squeeze(), class_index[k])
+            
+    tstdata, trndata = alldata.splitWithProportion( 0.25 )
+    
+    trndata._convertToOneOfMany()
+    tstdata._convertToOneOfMany()
+    
+    fnn = buildNetwork( trndata.indim, 2, trndata.outdim, hiddenclass=TanhLayer, outclass=SoftmaxLayer)
+    trainer = BackpropTrainer(fnn, dataset=trndata, momentum=0.1, verbose=False, weightdecay=0.01)
+    
+    test_errors = []
+    num_slope_samps = 10
+    slope = 0.0
+    
+    while True:
+        
+        if len(test_errors) >= num_slope_samps:
+            coef = np.polyfit(np.arange(num_slope_samps), test_errors[-num_slope_samps:], 1)
+            slope = coef[0]
+            if slope > 0.0:
+                print 'Test error slope > 0.0, stopping'
+                break
+        
+        trainer.train()        
+        train_err = percentError( trainer.testOnClassData(), trndata['class'])
+        test_err = percentError( trainer.testOnClassData(dataset=tstdata), tstdata['class'])
+        print "Iteration: %d, train_err=%0.4f, test_err=%0.4f, slope=%0.4f" % (trainer.totalepochs, train_err, test_err, slope)
+        test_errors.append(test_err)
+        
+    return (train_err, test_err, fnn, trainer)
+    
+        
     
         

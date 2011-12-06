@@ -1,3 +1,4 @@
+import operator
 import numpy as np
 import h5py
 
@@ -138,6 +139,54 @@ def read_stims_from_file(sample_file):
     f.close()
     
     return stims
+    
+def stim_pca(stim_file, ndim=3):
+    
+    all_stims = []
+    stim_index_class = [] 
+    stims = read_stims_from_file(stim_file)
+    for k,(stim_key,samps) in enumerate(stims.iteritems()):
+        for m in range(samps.shape[0]):
+            all_stims.append(samps[m, :].squeeze())
+            stim_index_class.append(k)
+    
+    all_stims = np.array(all_stims)
+    tlen = all_stims.shape[1]
+    
+    stim_cov = np.zeros([tlen, tlen], dtype='float')
+    stim_mean = all_stims.mean(axis=0)
+    nsamps = all_stims.shape[0]
+    for m in range(nsamps):
+        sms = all_stims[m, :].squeeze() - stim_mean
+        stim_cov += np.outer(sms, sms)
+    
+    stim_cov /= len(all_stims)    
+    
+    (evals, evecs) = np.linalg.eig(stim_cov)
+    
+    evord = zip(range(tlen), evals)
+    evord.sort(key=operator.itemgetter(1), reverse=True)
+    
+    eval_ret = [x[1] for x in evord]
+    evec_ret = [evecs[:, x[0]].squeeze() for x in evord]
+    
+    proj = []
+    for m in range(nsamps):
+        p = []
+        stim = all_stims[m, :].squeeze()
+        for m in range(ndim):
+            p.append(np.dot(evec_ret[m].squeeze(), stim))
+        proj.append(p)    
+    proj = np.array(proj)
+    
+    return (all_stims, proj, stim_index_class)
+    
+    
+    
+    
+    
+    
+    
     
     
     
