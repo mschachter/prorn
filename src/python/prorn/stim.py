@@ -145,10 +145,18 @@ def stim_pca(stim_file, ndim=3):
     all_stims = []
     stim_index_class = [] 
     stims = read_stims_from_file(stim_file)
+    
+    f = h5py.File(stim_file, 'r')
+    stim_keys_f = f.keys()
+    f.close()
+    stim_key_order = {}
+    for k,sk in enumerate(stim_keys_f):
+        stim_key_order[sk] = int(sk[5:])
+    
     for k,(stim_key,samps) in enumerate(stims.iteritems()):
         for m in range(samps.shape[0]):
             all_stims.append(samps[m, :].squeeze())
-            stim_index_class.append(k)
+            stim_index_class.append(stim_key_order[stim_key])
     
     all_stims = np.array(all_stims)
     tlen = all_stims.shape[1]

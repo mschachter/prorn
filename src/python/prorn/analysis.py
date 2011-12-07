@@ -17,6 +17,8 @@ class PerformanceData:
         self.nn_perf = None
         self.logit_perf = None
         self.entropy_ratio = None
+        self.entropy = None
+        self.mutual_information = None
         
         self.eigen_values = None        
         self.input_weight = None
@@ -130,7 +132,7 @@ def compute_mutual_information(net_files, readout_window=(0, 1)):
             net_keys = fnet.keys()
             print 'Computing MI for %d networks in %s...' % (len(net_keys), net_file)    
             
-            nbins_to_try = [250, 300, 350, 400]
+            nbins_to_try = [250, 300, 350]
             
             for net_key in net_keys:
                 print '\tComputing MI for %s' % net_key
@@ -150,15 +152,42 @@ def compute_mutual_information(net_files, readout_window=(0, 1)):
                 
             fnet.close()
     
+def get_info_data(net_files):
+    
+    nbins_to_try = [250, 300, 350]
+    
+    idata = {}
+    for nbins in nbins_to_try:
+        idata[nbins] = []
+    
+    for net_file in net_files:
+        if os.path.exists(net_file):
+            print 'File: %s' % net_file
+            f = h5py.File(net_file, 'r')
+            net_keys = f.keys()
+            nsamps = len(net_keys)
+                    
+            for k,net_key in enumerate(net_keys):
+                try:
+                    mi = np.array(f[net_key].attrs['mutual_information'])
+                    h = np.array(f[net_key].attrs['entropy'])
+                    for nbins in nbins_to_try:
+                        i = nbins_to_try.index(nbins)
+                        idata[nbins].append((h[i, 1], mi[i, 1]))                     
+                except:
+                    print 'Problem with net_key %s' % net_key
+            f.close()
+    
+    return idata
 
 
-def get_perfs(net_files, entropy_ratio_bins=125):
+def get_perfs(net_files, entropy_bins=350):
     
     perf_types = ['nn', 'logit']
     perfs = []
     
-    nbins_to_try = [8, 27, 64, 125, 216]
-    nbins_index = nbins_to_try.index(entropy_ratio_bins)
+    nbins_to_try = [250, 300, 350]
+    nbins_index = nbins_to_try.index(entropy_bins)
     
     index2keys = []
     
@@ -180,10 +209,13 @@ def get_perfs(net_files, entropy_ratio_bins=125):
                     logit_perf = float(f[net_key].attrs['logit_perf'])                
                 except:
                     print '\tproblem getting logit from %s' % net_key
-                entropy_ratio = np.nan
+                H = np.nan
+                MI = np.nan
+                er = np.nan
                 try:
-                    er = np.array(f[net_key].attrs['entropy_ratio'])
-                    entropy_ratio = er[nbins_index, 1]
+                    MI = np.array(f[net_key].attrs['mutual_information'])[nbins_index, 1]                                        
+                    H = np.array(f[net_key].attrs['entropy'])[nbins_index, 1]
+                    er = MI / H
                 except:
                     print '\tproblem getting entropy from %s' % net_key
                 try:
@@ -192,7 +224,7 @@ def get_perfs(net_files, entropy_ratio_bins=125):
                 except:
                     print '\tProblem getting weights/eigenvalues from %s' % net_key
                 
-                perfs.append([nn_perf, logit_perf, entropy_ratio, evals[0], evals[1], evals[2]])
+                perfs.append([nn_perf, logit_perf, H, MI, er, evals[0], evals[1], evals[2]])
                 
                 (rootdir, fname) = os.path.split(net_file)
                 ikey = (fname, net_key)
@@ -202,21 +234,23 @@ def get_perfs(net_files, entropy_ratio_bins=125):
 
     return (np.array(perfs), index2keys)
 
-def write_perfs(net_files, perf_file, entropy_ratio_bins=125):
+def write_perfs(net_files, perf_file):
     
     f = open(perf_file, 'w')
     for net_file in net_files:
         if os.path.exists(net_file):
-            (perfs, index2keys) = get_perfs([net_file], entropy_ratio_bins=entropy_ratio_bins)
+            (perfs, index2keys) = get_perfs([net_file])
             for k,(fname,net_key) in enumerate(index2keys):
                 nn_perf = perfs[k, 0]
                 logit_perf = perfs[k, 1]
-                er = perfs[k, 2]
-                ev1 = perfs[k, 3]
-                ev2 = perfs[k, 4]
-                ev3 = perfs[k, 5]
-                f.write('%s,%s,%0.3f,%0.6f,%0.6f,%s,%s,%s\n' %
-                        (fname, net_key, nn_perf, logit_perf, er,
+                H = perfs[k, 2]
+                MI = perfs[k, 3]
+                er = perfs[k, 4]
+                ev1 = perfs[k, 5]
+                ev2 = perfs[k, 6]
+                ev3 = perfs[k, 7]
+                f.write('%s,%s,%0.3f,%0.6f,%0.6f,%0.6f,%0.6f,%s,%s,%s\n' %
+                        (fname, net_key, nn_perf, logit_perf, H, MI, er,
                          str(ev1).strip(')('),str(ev2).strip(')('),str(ev3).strip(')(')))    
     f.close()   
 
@@ -232,10 +266,12 @@ def read_perfs(perf_file):
         net_key = str(row[1])
         nn_perf = float(row[2])
         logit_perf = float(row[3])
-        er = float(row[4])
-        ev1 = complex(row[5])
-        ev2 = complex(row[6])
-        ev3 = complex(row[7])
+        H = float(row[4])
+        MI = float(row[5])
+        er = float(row[6])
+        ev1 = complex(row[7])
+        ev2 = complex(row[8])
+        ev3 = complex(row[9])
         
         evlist = [(ev1, np.abs(ev1)),
                   (ev2, np.abs(ev2)),
@@ -253,6 +289,8 @@ def read_perfs(perf_file):
             pd.net_key = net_key
             pd.nn_perf = nn_perf
             pd.logit_perf = logit_perf
+            pd.entropy = H
+            pd.mutual_information = MI
             pd.entropy_ratio = er
             pd.eigen_values = (ev1, ev2, ev3)
             pdata.append(pd)
@@ -262,11 +300,11 @@ def read_perfs(perf_file):
     return pdata
 
 
-def filter_perfs(pdata, nn_perf_cutoff=70, logit_cutoff=0.17):
+def filter_perfs(pdata, nn_perf_cutoff=70, logit_cutoff=0.17, mi_cutoff=-np.Inf):
     
     pnew = []
     for p in pdata:
-        if p.nn_perf < nn_perf_cutoff and p.logit_perf < logit_cutoff:
+        if p.nn_perf < nn_perf_cutoff and p.logit_perf < logit_cutoff and p.mutual_information >= mi_cutoff:
             pnew.append(p)
             
     return pnew

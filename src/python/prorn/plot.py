@@ -12,8 +12,7 @@ import h5py
 
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
-from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca
-
+from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca, get_info_data
 
 
 def plot_prototypes(prototypes, noise_mean=0.0, noise_std=0.15):
@@ -64,6 +63,35 @@ def plot_stimuli(stim_file):
     f.close()
     plt.show()
 
+  
+def plot_info_data(net_files):
+    
+    idata = get_info_data(net_files)
+    
+    plt.clf()
+    fig = plt.gcf()
+    
+    for k,(nbins,ilist) in enumerate(idata.iteritems()):
+        H = np.array([x[0] for x in ilist])
+        MI = np.array([x[1] for x in ilist])
+        
+        nzi = MI >= 0.0
+        print '# of positive MIs: %d' % len(nzi.nonzero()[0])
+        
+        sp_indx = k*2 + 1
+        
+        ax = fig.add_subplot(len(idata), 2, sp_indx)
+        ax.hist(H[nzi], bins=20)
+        ax.set_xlabel('Entropy (nbins=%d)' % nbins)
+        plt.axis('tight')
+        
+        ax = fig.add_subplot(len(idata), 2, sp_indx+1)
+        ax.hist(MI[nzi], bins=20)
+        ax.set_xlabel('Mutual Information (nbins=%d)' % nbins)
+        plt.axis('tight')
+            
+    plt.show()
+    
   
 def plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial, temp_dir, output_file):
     
@@ -188,6 +216,8 @@ def plot_readout_data(net_file, net_key, readout_window):
     for k,sc in enumerate(all_stim_classes):
         sc_states = states[stim_classes == sc, :]    
         ax.scatter(sc_states[:, 0], sc_states[:, 1], sc_states[:, 2], c=clrs[k])
+    ax.set_title('Post-Stimulus Network State')
+    plt.axis('tight')
     
     plt.show()
     
@@ -206,12 +236,12 @@ def plot_perf_histograms(pdata, filter=True):
     fig = plt.gcf()    
     ax = fig.add_subplot(3, 1, 1)
     ax.hist(nn_perfs, bins=25)
-    ax.set_title('NN Performance')
+    ax.set_title('% Correct (NN Readout)')
     plt.axis('tight')
     
     ax = fig.add_subplot(3, 1, 2)
     ax.hist(logit_perfs, bins=25)
-    ax.set_title('Logit Performance')
+    ax.set_title('% Correct (Logit Readout)')
     plt.axis('tight')
     
     ax = fig.add_subplot(3, 1, 3)
@@ -221,35 +251,83 @@ def plot_perf_histograms(pdata, filter=True):
     
     plt.show()
     
+def plot_mi_vs_eig_vs_perf(pdata, filter=True):
+    if filter:
+        pdata = filter_perfs(pdata, mi_cutoff=0.0)
+        
+    nn_perfs = np.array([p.nn_perf for p in pdata])    
+    mi = np.array([p.mutual_information for p in pdata])
+    
+    nn_perfs_norm = 1.0 - (nn_perfs / nn_perfs.max())
+    
+    ev1 = []
+    ev2 = []
+    for p in pdata:
+        ev1.append([p.eigen_values[0].real, p.eigen_values[0].imag])
+        ev2.append([p.eigen_values[1].real, p.eigen_values[1].imag])
+    ev1 = np.array(ev1)
+    ev2 = np.array(ev2)   
+    ev1_mod = np.sqrt((ev1**2).sum(axis=1))    
+    ev2_mod = np.sqrt((ev2**2).sum(axis=1))
+
+    plt.clf()
+    fig = plt.gcf()
+    
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(ev1_mod, ev2_mod, mi)
+    ax.set_xlabel('$|\lambda_1|$')
+    ax.set_ylabel('$|\lambda_2|$')
+    ax.set_zlabel('Mutual Information')
+    
+    """
+    plt.clf()
+    fig = plt.gcf()
+    
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    for k in range(len(nn_perfs_norm)):
+        r = nn_perfs_norm[k]
+        g = 0
+        b = 1.0 - nn_perfs_norm[k]
+        ax.scatter([ev1_mod[k]], [ev2_mod[k]], [mi[k]], c=(r, g, b), s=30)
+    ax.set_xlabel('$|\lambda_1|$')
+    ax.set_ylabel('$|\lambda_2|$')
+    ax.set_zlabel('Mutual Information')
+    """
+    
+    plt.show()
+    
+    
 
 def plot_entropy_ratio_vs_perf(pdata, filter=True):
     
     if filter:
-        pdata = filter_perfs(pdata)
+        pdata = filter_perfs(pdata, mi_cutoff=0.0)
 
-    nn_perfs = np.array([p.nn_perf for p in pdata])
-    logit_perfs = np.array([p.logit_perf for p in pdata])
+    nn_perfs = 1.0 - (np.array([p.nn_perf for p in pdata]) / 100.0)
+    logit_perfs = 1.0 - np.array([p.logit_perf for p in pdata])
+    mi = np.array([p.mutual_information for p in pdata])
+    entropy = np.array([p.entropy for p in pdata])
     entropy_ratios = np.array([p.entropy_ratio for p in pdata])
-            
+                
     plt.clf()
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1)
-    ax.plot(logit_perfs, nn_perfs / 100.0, 'o', markerfacecolor='gray')
-    plt.xlabel('Logit Perf')
-    plt.ylabel('NN Perf')
+    ax.plot(logit_perfs, nn_perfs, 'o', markerfacecolor='gray')
+    plt.xlabel('% Correct (Logit Readout)')
+    plt.ylabel('% Correct (NN Readout)')
     plt.axis('tight')
-
+    
     fig = plt.figure()
     ax = fig.add_subplot(2, 1, 1)
-    ax.plot(entropy_ratios, nn_perfs, 'go')
-    plt.xlabel('Entropy Ratio')
-    plt.ylabel('NN Perf')
+    ax.plot(mi, nn_perfs, 'o', markerfacecolor='orange')
+    plt.xlabel('Mutual Information (bits)')
+    plt.ylabel('% Correct (NN Readout)')
     plt.axis('tight')
     
     ax = fig.add_subplot(2, 1, 2)
-    ax.plot(entropy_ratios, logit_perfs, 'bo')
-    plt.xlabel('Entropy Ratio')
-    plt.ylabel('Logit Perf')
+    ax.plot(mi, logit_perfs, 'o', markerfacecolor='orange')
+    plt.xlabel('Mutual Information (bits)')
+    plt.ylabel('% Correct (Logit Readout)')
     plt.axis('tight')
     
     plt.show()
@@ -457,7 +535,7 @@ def plot_stim_pca(stim_file):
     ax = fig.add_subplot(1, 1, 1, projection='3d')
     for k,sc in enumerate(stim_classes):
         sc_indx = class_indx == sc
-        ax.scatter(stim_proj[sc_indx, 0], stim_proj[sc_indx, 1], stim_proj[sc_indx, 2], c=clrs[k])       
+        ax.scatter(stim_proj[sc_indx, 0], stim_proj[sc_indx, 1], stim_proj[sc_indx, 2], c=clrs[sc])       
     ax.set_title('3D PCA Projected Stimuli')
         
     plt.show()
