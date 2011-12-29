@@ -12,7 +12,7 @@ import h5py
 
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
-from prorn.spectra import compute_pseudospectra
+from prorn.spectra import plot_pseudospectra
 from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca, get_info_data
 
 
@@ -541,7 +541,53 @@ def plot_stim_pca(stim_file):
         
     plt.show()
 
-
+def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data'):
+    
+    pdata = filter_perfs(pdata)
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    pdata.sort(key=operator.attrgetter('nn_perf'))
+    weights = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            fname = os.path.join(rootdir, p.file_name)
+            net_key = p.net_key
+            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
+            f = h5py.File(fname, 'r')
+            W = np.array(f[net_key]['W'])
+            weights[k].append(W)        
+            f.close()
+    
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            ax = fig.add_subplot(perrow, percol, k)
+            plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=False)
+            plt.axhline(0.0, color='k', axes=ax)
+            plt.axvline(0.0, color='k', axes=ax)
+            plt.xticks([], [])
+            plt.yticks([], [])
+            
+            p = pdata[offset + k]
+            for m in range(3):
+                ev = p.eigen_values[m]
+                ax.plot(ev.real, ev.imag, 'ko', markerfacecolor='w')
+        if offset == 0:
+            plt.suptitle('Pseudospectra of Top %d Networks' % num_plots)
+        else:
+            plt.suptitle('Pseudospectra of Bottom %d Networks' % num_plots)
+            
+    plt.show()
+    
+    
 
 def save_to_png(fig, output_file):
     canvas = FigureCanvasAgg(fig)

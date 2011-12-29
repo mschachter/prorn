@@ -23,16 +23,16 @@ def compute_pseudospectra(A, bounds, npts):
     
     return (Z, smin)
 
-def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50):
+def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=False):
     
     (Z, smin) = compute_pseudospectra(A, bounds, npts)
     
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1)
-    res = ax.imshow(smin, interpolation='nearest', cmap=cm.jet)
-    fig.colorbar(res)
-    ax.set_title('Pseudospectra')
-    plt.show()
-
-    
+    if ax is None:        
+        ax = fig.add_subplot(1, 1, 1)
+    if log:
+        smin = np.log10(smin)
+    res = ax.imshow(smin, interpolation='nearest', cmap=cm.jet, extent=bounds)
+    if colorbar:
+        fig = plt.gcf()
+        fig.colorbar(res)
     
