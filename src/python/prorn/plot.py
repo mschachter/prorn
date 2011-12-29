@@ -12,6 +12,7 @@ import h5py
 
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
+from prorn.spectra import compute_pseudospectra
 from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca, get_info_data
 
 
@@ -539,7 +540,8 @@ def plot_stim_pca(stim_file):
     ax.set_title('3D PCA Projected Stimuli')
         
     plt.show()
-    
+
+
 
 def save_to_png(fig, output_file):
     canvas = FigureCanvasAgg(fig)
