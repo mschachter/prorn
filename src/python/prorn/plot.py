@@ -2,6 +2,7 @@ import os
 import time
 import operator
 
+import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -541,14 +542,14 @@ def plot_stim_pca(stim_file):
         
     plt.show()
 
-def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data'):
+def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)
     
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
-    pdata.sort(key=operator.attrgetter('nn_perf'))
+    pdata.sort(key=operator.attrgetter(perf_attr))
     weights = [[], []]
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
@@ -573,6 +574,10 @@ def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data'):
             plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=False)
             plt.axhline(0.0, color='k', axes=ax)
             plt.axvline(0.0, color='k', axes=ax)
+            plt.axhline(1.0, color='gray', axes=ax)
+            plt.axhline(-1.0, color='gray', axes=ax)
+            plt.axvline(1.0, color='gray', axes=ax)
+            plt.axvline(-1.0, color='gray', axes=ax)
             plt.xticks([], [])
             plt.yticks([], [])
             
@@ -586,8 +591,94 @@ def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data'):
             plt.suptitle('Pseudospectra of Bottom %d Networks' % num_plots)
             
     plt.show()
+
+    
+def plot_perf_by_schur_offdiag(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+    
+    pdata = filter_perfs(pdata)    
+    pdata.sort(key=operator.attrgetter(perf_attr))
+    
+    perfs = []
+    schur_offdiag_sum = []
+    for m,p in enumerate(pdata):
+        fname = os.path.join(rootdir, p.file_name)
+        net_key = p.net_key
+        f = h5py.File(fname, 'r')
+        W = np.array(f[net_key]['W'])
+        f.close()
+        (T, Z) = scipy.linalg.schur(W, 'complex')
+        M = np.abs(T)
+        M -= np.diag(np.diag(M))
+    
+        perfs.append(getattr(p, perf_attr))
+        schur_offdiag_sum.append(M.sum())
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(schur_offdiag_sum, perfs, 'ko')
+    ax.set_title('Sum of off-diagnonal elements of Schur decomposition')
+    plt.ylabel('Performance')
+    plt.xlabel('Sum')
+    plt.show()
     
     
+def plot_schur_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+    
+    pdata = filter_perfs(pdata)
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    pdata.sort(key=operator.attrgetter(perf_attr))
+    weights = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            fname = os.path.join(rootdir, p.file_name)
+            net_key = p.net_key
+            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
+            f = h5py.File(fname, 'r')
+            W = np.array(f[net_key]['W'])
+            weights[k].append(W)        
+            f.close()
+    
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            (T, Z) = scipy.linalg.schur(W, 'complex')
+            M = np.abs(T)
+            M -= np.diag(np.diag(M))            
+            
+            """
+            (evals, evecs) = np.linalg.eig(W)
+            osum = complex(0.0)
+            for m in range(3):
+                for n in range(m+1, 3):
+                    v1 = evecs[:, m]
+                    v2 = evecs[:, n]
+                    dp = np.dot(v1, v2)                    
+                    osum += dp
+            """
+            
+            ax = fig.add_subplot(perrow, percol, k)
+            ax.imshow(M, interpolation='nearest', vmin=-1.0, vmax=1.0, cmap=cm.jet)
+            #ax.set_title('%0.2f' % M.sum())            
+            plt.xticks([], [])
+            plt.yticks([], [])
+            
+            p = pdata[offset + k]
+            
+        if offset == 0:
+            plt.suptitle('Schur Decomposition of Top %d Networks' % num_plots)
+        else:
+            plt.suptitle('Schur Decomposition of Bottom %d Networks' % num_plots)
+            
+    plt.show()
 
 def save_to_png(fig, output_file):
     canvas = FigureCanvasAgg(fig)
