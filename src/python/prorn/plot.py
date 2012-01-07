@@ -11,6 +11,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 import h5py
 
+from prorn.info import fisher_memory_matrix
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
 from prorn.spectra import plot_pseudospectra
@@ -679,6 +680,138 @@ def plot_schur_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr
             plt.suptitle('Schur Decomposition of Bottom %d Networks' % num_plots)
             
     plt.show()
+    
+def plot_fmm_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+    
+    pdata = filter_perfs(pdata)
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    pdata.sort(key=operator.attrgetter(perf_attr))
+    weights = [[], []]
+    inputs = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            fname = os.path.join(rootdir, p.file_name)
+            net_key = p.net_key
+            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
+            f = h5py.File(fname, 'r')
+            W = np.array(f[net_key]['W'])
+            Win = np.array(f[net_key]['Win']).squeeze()
+            weights[k].append(W)
+            inputs[k].append(Win)
+            f.close()
+    
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            v = inputs[j][k]
+            J = fisher_memory_matrix(W, v, npts=6)
+            Jlog = np.log(J+1.0)
+            
+            ax = fig.add_subplot(perrow, percol, k)
+            ax.imshow(J, interpolation='nearest', cmap=cm.jet)
+            #ax.set_title('%0.2f' % M.sum())            
+            plt.xticks([], [])
+            plt.yticks([], [])
+            
+            p = pdata[offset + k]
+            
+        if offset == 0:
+            plt.suptitle('Fisher Memory Matricies of Top %d Networks' % num_plots)
+        else:
+            plt.suptitle('Fisher Memory Matricies of Bottom %d Networks' % num_plots)
+            
+    plt.show()    
+
+def plot_fmc_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+    
+    pdata = filter_perfs(pdata)
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    pdata.sort(key=operator.attrgetter(perf_attr))
+    weights = [[], []]
+    inputs = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            fname = os.path.join(rootdir, p.file_name)
+            net_key = p.net_key
+            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
+            f = h5py.File(fname, 'r')
+            W = np.array(f[net_key]['W'])
+            Win = np.array(f[net_key]['Win']).squeeze()
+            weights[k].append(W)
+            inputs[k].append(Win)
+            f.close()
+    
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            v = inputs[j][k]
+            J = fisher_memory_matrix(W, v)
+            fmc = np.diag(J)
+            fmc /= fmc.max()
+            
+            ax = fig.add_subplot(perrow, percol, k)
+            ax.plot(fmc, 'k-')
+            ax.set_title('%0.3f' % fmc.sum())            
+            plt.xticks([], [])
+            plt.yticks([], [])
+            
+            p = pdata[offset + k]
+            
+        if offset == 0:
+            plt.suptitle('Fisher Memory Curves of Top %d Networks' % num_plots)
+        else:
+            plt.suptitle('Fisher Memory Curves of Bottom %d Networks' % num_plots)
+            
+    plt.show()    
+    
+
+def plot_perf_by_jtot(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+    
+    pdata = filter_perfs(pdata)    
+    pdata.sort(key=operator.attrgetter(perf_attr))
+    
+    perfs = []
+    jtots = []
+    for m,p in enumerate(pdata):
+        fname = os.path.join(rootdir, p.file_name)
+        net_key = p.net_key
+        f = h5py.File(fname, 'r')
+        W = np.array(f[net_key]['W'])
+        Win = np.array(f[net_key]['Win']).squeeze()
+        v = Win.squeeze()
+        f.close()
+        J = fisher_memory_matrix(W, v)
+        fmc = np.diag(J)
+        fmc /= fmc.max()
+        perfs.append(getattr(p, perf_attr))
+        jtots.append(fmc.sum())
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(jtots, perfs, 'ko')
+    ax.set_title('Jtot vs Performance')
+    plt.xlabel('Jtot')
+    plt.ylabel('Performance')
+    plt.show()
+
 
 def save_to_png(fig, output_file):
     canvas = FigureCanvasAgg(fig)

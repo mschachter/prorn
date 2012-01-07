@@ -114,3 +114,31 @@ def entropy(samps, nbins=350):
     for p in nzp:
         H += p*np.log2(p)
     return -H
+
+
+def fisher_memory_matrix(W, v, npts = 15):
+    
+    J = np.zeros([npts, npts])    
+    Cn = gaussian_covariance_matrix(W)
+    Cninv = np.linalg.inv(Cn)
+    for k in range(npts):
+        for j in range(npts):
+            v1 = np.dot(W**j, v)
+            v2 = np.dot(Cninv, v1)
+            v3 = np.dot(np.transpose(W**k), v2)
+            J[k, j] = np.dot(v, v3)
+    return J
+
+
+def gaussian_covariance_matrix(W, niters=100):    
+    sum = 0.0
+    for k in range(niters):
+        Wk = W**k
+        sum += np.dot(Wk, np.transpose(Wk))
+    return sum
+    
+    
+    
+    
+    
+    
