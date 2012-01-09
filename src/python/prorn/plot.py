@@ -713,7 +713,7 @@ def plot_fmm_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='
         for k in range(num_plots):
             W = weights[j][k]
             v = inputs[j][k]
-            J = fisher_memory_matrix(W, v, npts=6)
+            J = fisher_memory_matrix(W, v, npts=15)
             Jlog = np.log(J+1.0)
             
             ax = fig.add_subplot(perrow, percol, k)

@@ -121,19 +121,21 @@ def fisher_memory_matrix(W, v, npts = 15):
     J = np.zeros([npts, npts])    
     Cn = gaussian_covariance_matrix(W)
     Cninv = np.linalg.inv(Cn)
+    Wmat = np.matrix(W)
     for k in range(npts):
         for j in range(npts):
-            v1 = np.dot(W**j, v)
-            v2 = np.dot(Cninv, v1)
-            v3 = np.dot(np.transpose(W**k), v2)
+            v1 = np.dot(Wmat**j, v)
+            v2 = np.dot(Cninv, np.transpose(v1))            
+            v3 = np.dot(np.transpose(Wmat**k), v2)
             J[k, j] = np.dot(v, v3)
     return J
 
 
 def gaussian_covariance_matrix(W, niters=100):    
     sum = 0.0
+    Wmat = np.matrix(W)
     for k in range(niters):
-        Wk = W**k
+        Wk = Wmat**k
         sum += np.dot(Wk, np.transpose(Wk))
     return sum
     
