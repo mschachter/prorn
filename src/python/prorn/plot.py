@@ -11,12 +11,12 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 import h5py
 
+from prorn.config import *
 from prorn.info import fisher_memory_matrix
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
 from prorn.spectra import plot_pseudospectra
 from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca, get_info_data
-
 
 def plot_prototypes(prototypes, noise_mean=0.0, noise_std=0.15):
     
@@ -96,7 +96,7 @@ def plot_info_data(net_files):
     plt.show()
     
   
-def plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial, temp_dir, output_file):
+def plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial, output_file):
     
     #get stim
     fstim = h5py.File(stim_file, 'r')
@@ -141,7 +141,7 @@ def plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial
     
     fig_prefix = '%s_%s_%d_%%d' % (net_key, stim_key, trial)
     fig_prefix_rm = '%s_%s_%d_*' % (net_key, stim_key, trial)
-    fig_path = os.path.join(temp_dir, '%s.png' % fig_prefix)
+    fig_path = os.path.join(TEMP_DIR, '%s.png' % fig_prefix)
     
     for t in t_rng:
         
@@ -161,12 +161,12 @@ def plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial
     print 'Running %s' % mov_cmd
     os.system(mov_cmd)
     
-    rm_cmd = 'rm %s' % os.path.join(temp_dir, fig_prefix_rm)
+    rm_cmd = 'rm %s' % os.path.join(TEMP_DIR, fig_prefix_rm)
     print 'Removing temp files...'
     os.system(rm_cmd)
     
 
-def create_net_and_stim_movies(stim_file, net_file, temp_dir='/home/cheese63/temp', output_dir='/home/cheese63/net_movies', limit=None):
+def create_net_and_stim_movies(stim_file, net_file, output_dir='/home/cheese63/net_movies', limit=None):
     
     ntrials = 20
     fstim = h5py.File(stim_file, 'r')
@@ -194,7 +194,7 @@ def create_net_and_stim_movies(stim_file, net_file, temp_dir='/home/cheese63/tem
                 
                 stime = time.time()                
                 output_file = os.path.join(dirname, '%s_%s_%d.mp4' % (net_key, stim_key, trial))
-                plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial, temp_dir, output_file)
+                plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial, TEMP_DIR, output_file)
                 
                 etime = time.time() - stime
                 print '-----------------------'
@@ -366,14 +366,14 @@ def plot_top100_weights_cov(pdata):
     plt.show()
      
 
-def plot_top_100_weights(pdata, filter=True, rootdir='/home/cheese63/git/prorn/data'):
+def plot_top_100_weights(pdata, filter=True):
     if filter:
         pdata = filter_perfs(pdata)
         
     pdata.sort(key=operator.attrgetter('nn_perf'))
     weights = []
     for p in pdata[0:100]:
-        fname = os.path.join(rootdir, p.file_name)
+        fname = os.path.join(DATA_DIR, p.file_name)
         net_key = p.net_key
         f = h5py.File(fname, 'r')
         W = np.array(f[net_key]['W'])
@@ -543,7 +543,7 @@ def plot_stim_pca(stim_file):
         
     plt.show()
 
-def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)
     
@@ -555,7 +555,7 @@ def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', p
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(rootdir, p.file_name)
+            fname = os.path.join(DATA_DIR, p.file_name)
             net_key = p.net_key
             print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
             f = h5py.File(fname, 'r')
@@ -594,7 +594,7 @@ def plot_pseudospectra_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', p
     plt.show()
 
     
-def plot_perf_by_schur_offdiag(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+def plot_perf_by_schur_offdiag(pdata, perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)    
     pdata.sort(key=operator.attrgetter(perf_attr))
@@ -602,7 +602,7 @@ def plot_perf_by_schur_offdiag(pdata, rootdir='/home/cheese63/git/prorn/data', p
     perfs = []
     schur_offdiag_sum = []
     for m,p in enumerate(pdata):
-        fname = os.path.join(rootdir, p.file_name)
+        fname = os.path.join(DATA_DIR, p.file_name)
         net_key = p.net_key
         f = h5py.File(fname, 'r')
         W = np.array(f[net_key]['W'])
@@ -623,7 +623,7 @@ def plot_perf_by_schur_offdiag(pdata, rootdir='/home/cheese63/git/prorn/data', p
     plt.show()
     
     
-def plot_schur_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+def plot_schur_by_perf(pdata, perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)
     
@@ -635,7 +635,7 @@ def plot_schur_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(rootdir, p.file_name)
+            fname = os.path.join(DATA_DIR, p.file_name)
             net_key = p.net_key
             print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
             f = h5py.File(fname, 'r')
@@ -681,7 +681,7 @@ def plot_schur_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr
             
     plt.show()
     
-def plot_fmm_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)
     
@@ -694,7 +694,7 @@ def plot_fmm_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(rootdir, p.file_name)
+            fname = os.path.join(DATA_DIR, p.file_name)
             net_key = p.net_key
             print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
             f = h5py.File(fname, 'r')
@@ -731,7 +731,7 @@ def plot_fmm_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='
             
     plt.show()    
 
-def plot_fmc_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+def plot_fmc_by_perf(pdata, perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)
     
@@ -744,7 +744,7 @@ def plot_fmc_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(rootdir, p.file_name)
+            fname = os.path.join(DATA_DIR, p.file_name)
             net_key = p.net_key
             print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
             f = h5py.File(fname, 'r')
@@ -783,7 +783,7 @@ def plot_fmc_by_perf(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='
     plt.show()    
     
 
-def plot_perf_by_jtot(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr='logit_perf'):
+def plot_perf_by_jtot(pdata, perf_attr='logit_perf'):
     
     pdata = filter_perfs(pdata)    
     pdata.sort(key=operator.attrgetter(perf_attr))
@@ -791,7 +791,7 @@ def plot_perf_by_jtot(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr=
     perfs = []
     jtots = []
     for m,p in enumerate(pdata):
-        fname = os.path.join(rootdir, p.file_name)
+        fname = os.path.join(DATA_DIR, p.file_name)
         net_key = p.net_key
         f = h5py.File(fname, 'r')
         W = np.array(f[net_key]['W'])
@@ -800,7 +800,7 @@ def plot_perf_by_jtot(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr=
         f.close()
         J = fisher_memory_matrix(W, v)
         fmc = np.diag(J)
-        fmc /= fmc.max()
+        #fmc /= fmc.max()
         perfs.append(getattr(p, perf_attr))
         jtots.append(fmc.sum())
     
@@ -812,6 +812,33 @@ def plot_perf_by_jtot(pdata, rootdir='/home/cheese63/git/prorn/data', perf_attr=
     plt.ylabel('Performance')
     plt.show()
 
+def plot_perf_by_jsum(pdata, perf_attr='logit_perf'):
+    
+    pdata = filter_perfs(pdata)    
+    pdata.sort(key=operator.attrgetter(perf_attr))
+    
+    perfs = []
+    jtots = []
+    for m,p in enumerate(pdata):
+        fname = os.path.join(DATA_DIR, p.file_name)
+        net_key = p.net_key
+        f = h5py.File(fname, 'r')
+        W = np.array(f[net_key]['W'])
+        Win = np.array(f[net_key]['Win']).squeeze()
+        v = Win.squeeze()
+        f.close()
+        J = fisher_memory_matrix(W, v)
+        jusum = np.abs(J[np.triu_indices(len(J))]).sum()
+        perfs.append(getattr(p, perf_attr))
+        jtots.append(jusum)
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(jtots, perfs, 'ko')
+    ax.set_title('Upper Triangular Sum of J vs Performance')
+    plt.xlabel('UT Sum')
+    plt.ylabel('Performance')
+    plt.show()
 
 def save_to_png(fig, output_file):
     canvas = FigureCanvasAgg(fig)
