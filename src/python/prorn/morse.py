@@ -3,7 +3,7 @@ import csv
 import numpy as np
 
 
-def encode_from_file(file_name, dot_length=2, dash_length=4, spacing=2):
+def parse_from_file(file_name, dot_length=2, dash_length=4):
 
     codes = {}
     lens = {'d':dot_length, 's':dash_length}
@@ -18,14 +18,23 @@ def encode_from_file(file_name, dot_length=2, dash_length=4, spacing=2):
         
         bcode = []
         for k,c in enumerate(code):
-            l = lens[c]
-            v = [1]*l
-            bcode.extend(v)
-            if k != len(code)-1:
-                s = [0]*spacing
-                bcode.extend(s)
+            v = [1]*lens[c]
+            bcode.append(v)
         codes[ltr] = bcode
         
     f.close()
     
     return codes
+
+def sample_spacing_noise(proto_code):
+    noisy_code = []
+    for k,sym in enumerate(proto_code):
+        noisy_code.extend(sym)
+        if 
+
+def sample_length_noise(proto_code):
+    pass
+
+def time_warp(code, speed_multiplier=2.0):
+    pass
+
