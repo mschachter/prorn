@@ -1,5 +1,5 @@
 import csv
-
+import copy
 import numpy as np
 
 
@@ -26,15 +26,22 @@ def parse_from_file(file_name, dot_length=2, dash_length=4):
     
     return codes
 
-def sample_spacing_noise(proto_code):
+def sample_with_jitter(proto_code, mean_spacing=2, max_deviation=1):
     noisy_code = []
     for k,sym in enumerate(proto_code):
         noisy_code.extend(sym)
-        if 
+        if k < len(proto_code):
+            snoise = np.random.randint(0, max_deviation+1)
+            spacing = [0]*(mean_spacing + snoise)
+            noisy_code.extend(spacing)
+    return noisy_code
 
-def sample_length_noise(proto_code):
-    pass
-
-def time_warp(code, speed_multiplier=2.0):
-    pass
-
+def add_length_noise(proto_code, max_additions=1):
+    ncode = []
+    for k,sym in enumerate(proto_code):
+        nsym = copy.copy(sym)
+        snoise = np.random.randint(0, max_additions+1)
+        if snoise > 0:
+            nsym.extend([1]*snoise)
+        ncode.append(nsym)
+    return ncode
