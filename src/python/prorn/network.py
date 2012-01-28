@@ -5,7 +5,7 @@ from prorn.input import CsvInputStream
 
 class EchoStateNetwork:
     
-    def __init__(self):
+    def __init__(self, noise_std=0.0):
         self.net = nx.DiGraph()
         self.compiled = False
         self.input_stream = None
@@ -18,6 +18,8 @@ class EchoStateNetwork:
         self.W = None #weight matrix
         self.Win = None #input weight matrix
         self.x = None #state vector
+        
+        self.noise_std = noise_std
         
     def set_stim_start_time(self, start_time):
         self.stim_start_time = start_time    
@@ -129,6 +131,8 @@ class EchoStateNetwork:
         if not self.compiled:
             self.compile()
         
+        N = len(internal_nodes)
+        
         #get input
         i_input = 0.0
         if self.input_stream is not None and self.t >= self.stim_start_time:            
@@ -139,8 +143,10 @@ class EchoStateNetwork:
                 
         #compute weighted input for each node
         i_internal = np.dot(self.W, self.x)
-                
-        self.x = i_input + i_internal           
+        i_noise = 0.0
+        if self.noise_std > 0.0:
+            i_noise = np.random.randn(N)*self.noise_std
+        self.x = i_input + i_internal + i_noise
         self.t += 1
         
     
