@@ -1,5 +1,6 @@
 import csv
 import copy
+import hashlib
 
 import numpy as np
 
@@ -108,7 +109,7 @@ def write_stim_to_hdf5(code_file, output_file):
     f = h5py.File(output_file, 'w')
     
     #write frequencies
-    letters_std = parse_from_file(code_file, dot_length=2, dash_length=4)
+    letters_std = parse_from_file(code_file, dot_length=2, dash_length=6)
     freq_grp = f.create_group('frequencies')
     for sym,ltr in letters_std.iteritems():
         freq_grp[sym] = ltr.freq
@@ -118,15 +119,17 @@ def write_stim_to_hdf5(code_file, output_file):
     for sym,ltr in letters_std.iteritems():
         samp = sample_with_jitter(ltr.code, min_spacing=2, max_deviation=0)
         sym_grp = std_grp.create_group(sym)
-        sym_grp['0'] = samp    
+        sym_grp['0'] = samp
+        sym_grp['0'].attrs['md5'] = get_hash_for_sample(samp, 'standard')
     
     #write time-warped noiseless morse code
     tw_grp = f.create_group('time_warped')
-    letters_tw = parse_from_file(code_file, dot_length=1, dash_length=2)
+    letters_tw = parse_from_file(code_file, dot_length=1, dash_length=3)
     for sym,ltr in letters_tw.iteritems():
         samp = sample_with_jitter(ltr.code, min_spacing=1, max_deviation=0)        
         sym_grp = tw_grp.create_group(sym)        
         sym_grp['0'] = samp
+        sym_grp['0'].attrs['md5'] = get_hash_for_sample(samp, 'time_warped')
 
     #write morse code with length noise
     ln_grp = f.create_group('length_noise')
@@ -136,6 +139,7 @@ def write_stim_to_hdf5(code_file, output_file):
         ltr_grp.attrs['count'] = len(samps)
         for k,samp in enumerate(samps):
             ltr_grp['%d' % k] = np.array(samp)
+            ltr_grp['%d' % k].attrs['md5'] = get_hash_for_sample(samp, 'length_noise')
     
     #write morse code with temporal jitter
     tj_grp = f.create_group('jitter')
@@ -144,7 +148,8 @@ def write_stim_to_hdf5(code_file, output_file):
         samps = ltr.get_samples(num_noisy_samples=100, num_jittered_samples=100, max_additions=0, max_jitter=1)
         ltr_grp.attrs['count'] = len(samps)
         for k,samp in enumerate(samps):            
-            ltr_grp['%d' % k] = np.array(samp)             
+            ltr_grp['%d' % k] = np.array(samp)
+            ltr_grp['%d' % k].attrs['md5'] = get_hash_for_sample(samp, 'jitter')
             
     #write morse code with both length noise and temporal jitter
     lntj_grp = f.create_group('jitter_and_length_noise')
@@ -154,25 +159,35 @@ def write_stim_to_hdf5(code_file, output_file):
         ltr_grp.attrs['count'] = len(samps)
         for k,samp in enumerate(samps):
             ltr_grp['%d' % k] = np.array(samp)
+            ltr_grp['%d' % k].attrs['md5'] = get_hash_for_sample(samp, 'jitter_and_length_noise')
     
     f.close()
     
-def get_stims_from_hdf5(stim_file, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
+def get_stims_from_hdf5_flat(stim_file, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
     
     fstim = h5py.File(stim_file, 'r')
     
     all_stims = {}
     for sc in classes:
         sc_grp = fstim[sc]
-        class_stims = {}
         for sym in sc_grp.keys():
             sym_grp = sc_grp[sym]
-            class_stims[sym] = {}
-            for stim_id in sym_grp.keys():                
-                class_stims[sym][stim_id] = np.array(sym_grp[stim_id])
-        all_stims[sc] = class_stims
-    
+            for stim_id in sym_grp.keys():       
+                stim_ds = sym_grp[stim_id]
+                md5 = stim_ds.attrs['md5']         
+                samp = np.array(stim_ds, dtype='float')
+                if md5 in all_stims:
+                    print 'WTF there are duplicate md5s: class=%s, stim_id=%s, md5=%s' % (sc, stim_id, md5)
+                all_stims[md5] = samp
+        
     fstim.close()
     
     return all_stims
+
+def get_hash_for_sample(samp, family=None):
+    hash = hashlib.md5()
+    if family is not None:
+        hash.update(family)
+    hash.update(''.join([str(x) for x in samp]))
+    return hash.hexdigest()
     

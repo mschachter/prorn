@@ -7,6 +7,8 @@ from prorn.input import *
 from prorn.stim import *
 from prorn.sim import *
 
+from prorn.morse import get_stims_from_hdf5_flat
+
 def create_inputless_net():
     
     net = EchoStateNetwork()
@@ -140,6 +142,7 @@ def run_many_nets(output_file, num_nets=5, rescale_frac=0.75, index_offset=0):
     
 def run_morse_nets(stim_file, output_file, num_nets=1, index_offset=0, num_nodes=3, input_gain=1.0):
 
+    all_stims = get_stims_from_hdf5_flat(stim_file)
     f = h5py.File(output_file, 'a')
     
     nis = NullInputStream([1, 1])
@@ -154,38 +157,27 @@ def run_morse_nets(stim_file, output_file, num_nets=1, index_offset=0, num_nodes
         print 'Running net %d...' % net_num
         net_key = 'net_%d' % net_num
         net = create_fullyconnected_net(num_nodes=num_nodes)
-        net_stims = run_sim(net, stims,
-                            burn_time=burn_time,
-                            pre_stim_time=pre_stim_time, post_stim_time=post_stim_time)
-                
         net.create_input(0)
         net.connect_input(0, 1, input_gain)
          
         net.set_input(nis)
         net.compile()
+        
+        net_stims = run_sim(net, all_stims,
+                            burn_time=burn_time,
+                            pre_stim_time=pre_stim_time, post_stim_time=post_stim_time)
+        
         net.to_hdf5(f, net_key)
          
         for stim_key,sim in net_stims.iteritems():
             
-            stimlen = stims[stim_key].shape[1]
-            stim_end = stim_start + stimlen            
-            f[net_key][stim_key] = net_state
-            f[net_key][stim_key].attrs['stim_start'] = stim_start
-            f[net_key][stim_key].attrs['stim_end'] = stim_end
+            stimlen = all_stims[stim_key].shape[1]
+            stim_end = stim_start + stimlen
+            net_grp = f.create_group(net_key)            
+            net_grp[stim_key] = net_state
+            net_grp[stim_key].attrs['stim_start'] = stim_start
+            net_grp[stim_key].attrs['stim_end'] = stim_end
     
     f.close()
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-        
-
     

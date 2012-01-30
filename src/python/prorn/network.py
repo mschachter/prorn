@@ -131,7 +131,7 @@ class EchoStateNetwork:
         if not self.compiled:
             self.compile()
         
-        N = len(internal_nodes)
+        N = self.num_internal_nodes()
         
         #get input
         i_input = 0.0
