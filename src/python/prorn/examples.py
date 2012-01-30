@@ -24,26 +24,22 @@ def create_inputless_net():
     
     return net
 
-def create_fullyconnected_net(rescale_frac=0.75):
+def create_fullyconnected_net(num_nodes, rescale_frac=0.999):
     
     net = EchoStateNetwork()
     
-    for n in [1, 2, 3]:        
+    for k in range(num_nodes):
+        n = k+1       
         net.create_node(n, initial_state=np.abs(np.random.randn()))
         
-    for n1 in [1, 2, 3]:
-        for n2 in [1, 2, 3]:
-            net.connect_nodes(n1, n2, np.random.randn())
+    for k1 in range(num_nodes):
+        for k2 in range(num_nodes):
+            net.connect_nodes(k1+1, k2+1, np.random.randn())
     
-    net.create_input(0)
-    net.connect_input(0, 1, np.abs(np.random.randn()))
-    
-    net.rescale_weights(rescale_frac)    
+    net.rescale_weights(rescale_frac)
     
     return net
-
-    
-    
+   
 
 def create_3node_net(input_file='/home/cheese63/test.csv'):
     
@@ -142,7 +138,54 @@ def run_many_nets(output_file, num_nets=5, rescale_frac=0.75, index_offset=0):
     
     
     
-    
-    
-                
+def run_morse_nets(stim_file, output_file, num_nets=1, index_offset=0, num_nodes=3, input_gain=1.0):
 
+    f = h5py.File(output_file, 'a')
+    
+    nis = NullInputStream([1, 1])
+    
+    burn_time = 100
+    post_stim_time = 10
+    pre_stim_time = 10 
+    
+    for k in range(num_nets):
+        
+        net_num = k + index_offset
+        print 'Running net %d...' % net_num
+        net_key = 'net_%d' % net_num
+        net = create_fullyconnected_net(num_nodes=num_nodes)
+        net_stims = run_sim(net, stims,
+                            burn_time=burn_time,
+                            pre_stim_time=pre_stim_time, post_stim_time=post_stim_time)
+                
+        net.create_input(0)
+        net.connect_input(0, 1, input_gain)
+         
+        net.set_input(nis)
+        net.compile()
+        net.to_hdf5(f, net_key)
+         
+        for stim_key,sim in net_stims.iteritems():
+            
+            stimlen = stims[stim_key].shape[1]
+            stim_end = stim_start + stimlen            
+            f[net_key][stim_key] = net_state
+            f[net_key][stim_key].attrs['stim_start'] = stim_start
+            f[net_key][stim_key].attrs['stim_end'] = stim_end
+    
+    f.close()
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+        
+
+    

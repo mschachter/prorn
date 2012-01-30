@@ -103,7 +103,7 @@ def add_length_noise(proto_code, max_additions=1):
 
 
 
-def write_stim_to_file(code_file, output_file):
+def write_stim_to_hdf5(code_file, output_file):
     
     f = h5py.File(output_file, 'w')
     
@@ -117,15 +117,16 @@ def write_stim_to_file(code_file, output_file):
     std_grp = f.create_group('standard')
     for sym,ltr in letters_std.iteritems():
         samp = sample_with_jitter(ltr.code, min_spacing=2, max_deviation=0)
-        std_grp[sym] = samp
-        std_grp[sym].attrs['freq'] = ltr.freq
+        sym_grp = std_grp.create_group(sym)
+        sym_grp['0'] = samp    
     
     #write time-warped noiseless morse code
     tw_grp = f.create_group('time_warped')
     letters_tw = parse_from_file(code_file, dot_length=1, dash_length=2)
     for sym,ltr in letters_tw.iteritems():
-        samp = sample_with_jitter(ltr.code, min_spacing=1, max_deviation=0)
-        tw_grp[sym] = samp
+        samp = sample_with_jitter(ltr.code, min_spacing=1, max_deviation=0)        
+        sym_grp = tw_grp.create_group(sym)        
+        sym_grp['0'] = samp
 
     #write morse code with length noise
     ln_grp = f.create_group('length_noise')
@@ -155,4 +156,23 @@ def write_stim_to_file(code_file, output_file):
             ltr_grp['%d' % k] = np.array(samp)
     
     f.close()
+    
+def get_stims_from_hdf5(stim_file, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
+    
+    fstim = h5py.File(stim_file, 'r')
+    
+    all_stims = {}
+    for sc in classes:
+        sc_grp = fstim[sc]
+        class_stims = {}
+        for sym in sc_grp.keys():
+            sym_grp = sc_grp[sym]
+            class_stims[sym] = {}
+            for stim_id in sym_grp.keys():                
+                class_stims[sym][stim_id] = np.array(sym_grp[stim_id])
+        all_stims[sc] = class_stims
+    
+    fstim.close()
+    
+    return all_stims
     
