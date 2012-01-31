@@ -5,7 +5,10 @@ from prorn.input import CsvInputStream
 
 class EchoStateNetwork:
     
-    def __init__(self, noise_std=0.0):
+    def __init__(self):
+        self.reinit()        
+                
+    def reinit(self):
         self.graph = nx.DiGraph()
         self.compiled = False
         self.input_stream = None
@@ -18,8 +21,8 @@ class EchoStateNetwork:
         self.W = None #weight matrix
         self.Win = None #input weight matrix
         self.x = None #state vector
+        self.noise_std = 0.0
         
-        self.noise_std = noise_std
         
     def set_stim_start_time(self, start_time):
         self.stim_start_time = start_time    
@@ -47,6 +50,8 @@ class EchoStateNetwork:
     def connect_input(self, input_index, n_id, weight=0.0):
         """ Connect an index in the input to a node """
         iname = self.input_index2node[input_index]
+        if iname in self.graph and n_id in self.graph[iname]:
+            del self.graph[iname][n_id]
         self.graph.add_edge(iname, n_id, weight=weight)
     
     def rescale_weights(self, frac=0.75):
@@ -69,15 +74,48 @@ class EchoStateNetwork:
         x = np.array([1 for n in self.graph.nodes() if 'is_input' in self.graph.node[n]])
         return int(x.sum())
     
-    def to_hdf5(self, f, key):
-        """ Write this object to an hdf5 file """
+    def to_hdf5(self, grp):
+        """ Write this object to an hdf5 group """
         
-        grp = f.create_group(key)
+        initial_state = []
+        for n in self.graph.nodes():
+            if not 'is_input' in self.graph.node[n]:
+                initial_state.append(self.graph.node[n]['state'])
+        
+        grp['initial_state'] = np.array(initial_state)
         grp['W'] = self.W
         grp['Win'] = self.Win        
         grp.attrs['type'] = '%s.%s' % (self.__module__, self.__class__.__name__)
     
-    
+    def from_hdf5(self, grp):
+        
+        self.reinit()
+        
+        W = np.array(grp['W'])
+        Win = np.array(grp['Win'])
+        initial_state = np.array(grp['initial_state'])
+        
+        N = W.shape[0]
+        Nin = Win.shape[1]
+         
+        #create internal nodes        
+        for n in range(N):
+            self.create_node(n, initial_state=initial_state[n])
+            
+        #create internal connections
+        for n1 in range(N):
+            for n2 in range(N):
+                w = W[n1, n2]
+                if w != 0.0:
+                   self.connect_nodes(n1, n2, weight=w) 
+        #create and connect inputs
+        for nin in range(Nin):
+            self.create_input(nin)
+            for n in range(N):
+                w = Win[n, nin]
+                if w != 0.0:
+                    self.connect_input(nin, n, weight=w)
+        
     def compile(self):
         """ Create state vector and weight matrix. """
         
@@ -91,14 +129,15 @@ class EchoStateNetwork:
                 
         self.t = 0
         N = len(internal_nodes)
-        Nin = 0
-        if self.input_stream is not None:
-            Nin = max(self.input_stream.shape)
+        Nin = len(input_nodes)
         self.x = np.zeros([N, 1], dtype='float').squeeze()
         self.W = np.zeros([N, N], dtype='float')
                 
-        if Nin != len(input_nodes):
-            print '# of input nodes does not match pre-specified #: %d != %d' % (Nin, len(input_nodes))        
+        Nis = 0
+        if self.input_stream is not None:
+            Nis = max(self.input_stream.shape)
+        if self.input_stream is not None and Nis != len(input_nodes):
+            print '# of input nodes from input stream does not match pre-specified #: %d != %d' % (Nis, len(input_nodes))        
         
         #initialize state
         for k,n in enumerate(internal_nodes):
@@ -115,7 +154,7 @@ class EchoStateNetwork:
                     self.W[i1, i2] = edge_attrs['weight']
         
         #initialize input
-        if self.input_stream is not None and len(input_nodes) > 0:
+        if len(input_nodes) > 0:
             self.Win = np.zeros([N, Nin])
             for n1,n2 in self.graph.edges():
                 if 'is_input' in self.graph.node[n1]:
@@ -149,13 +188,4 @@ class EchoStateNetwork:
         self.x = i_input + i_internal + i_noise
         self.t += 1
         
-    
-    
-        
-        
-        
-        
-        
-    
-    
     

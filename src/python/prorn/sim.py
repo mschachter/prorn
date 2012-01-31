@@ -12,10 +12,20 @@ class Simulation():
         self.net = None
         self.stim_start = None
         self.stim_end = None
-        self.net_state = None
+        self.num_trials = None
+        self.responses = None
+        
+    def to_hdf5(self, grp):        
+        grp.attrs['stim_start'] = self.stim_start
+        grp.attrs['stim_end'] = self.stim_end
+        grp.attrs['num_trials'] = self.num_trials
+
+        for n in range(self.num_trials):
+            net_state = self.responses[n, :, :].squeeze()
+            grp['%d' % (n+1)] = net_state
         
 
-def run_sim(net, stims, burn_time=100, pre_stim_time = 10, post_stim_time=10):
+def run_sim(net, stims, burn_time=100, pre_stim_time = 10, post_stim_time=10, num_trials=1):
     
     net_sims = {}
     Ninternal = net.num_internal_nodes()    
@@ -23,30 +33,30 @@ def run_sim(net, stims, burn_time=100, pre_stim_time = 10, post_stim_time=10):
     for stim_key,stim in stims.iteritems():
         
         stimlen = len(stim)
-        tlen_total = burn_time + post_stim_time + stimlen
+        tlen_total = burn_time + stimlen + post_stim_time
         tlen_rec = tlen_total - start_record        
-        net_state = np.zeros([tlen_rec, Ninternal])
-        
-        ais = ArrayInputStream(stim.reshape([len(stim), 1]))
-        
-        net_copy = copy.deepcopy(net)
-        net_copy.set_input(ais)     
-        net_copy.compile()
-                
-        net_copy.set_stim_start_time(burn_time)
-        
-        for t in range(tlen_total):
-            net_copy.step()
-            trec = t - start_record
-            if trec >= 0:
-                net_state[trec, :] = net_copy.x
         
         sim = Simulation()
-        sim.net = net_copy
+        sim.net = net
         sim.stim_start = pre_stim_time
         sim.stim_end = sim.stim_start + stimlen
-        sim.net_state = net_state
+        sim.num_trials = num_trials
+        sim.responses = np.zeros([num_trials, tlen_rec, Ninternal])
         
+        for n in range(num_trials):
+            net_copy = copy.deepcopy(net)
+            ais = ArrayInputStream(stim.reshape([len(stim), 1]))
+            net_copy.set_input(ais)     
+            net_copy.compile()
+                    
+            net_copy.set_stim_start_time(burn_time)
+            
+            for t in range(tlen_total):
+                net_copy.step()
+                trec = t - start_record
+                if trec >= 0:
+                    sim.responses[n, trec, :] = net_copy.x
+                    
         net_sims[stim_key] = sim
     
     return net_sims 
