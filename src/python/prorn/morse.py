@@ -58,6 +58,8 @@ class MorseStimSet:
         self.classes = classes
         self.md5_to_symbol = {}
         self.symbol_to_md5 = {}
+        self.md5_to_class = {}
+        self.class_to_md5 = {}
         self.all_stims = {}
     
     def from_hdf5(self, stim_file):
@@ -66,6 +68,7 @@ class MorseStimSet:
         all_stims = {}
         for sc in self.classes:
             sc_grp = fstim[sc]
+            self.class_to_md5[sc] = []
             for sym in sc_grp.keys():
                 
                 if sym not in self.symbol_to_md5:
@@ -76,6 +79,8 @@ class MorseStimSet:
                     md5 = stim_ds.attrs['md5']
                     self.symbol_to_md5[sym].append(md5)
                     self.md5_to_symbol[md5] = sym
+                    self.md5_to_class[md5] = sc
+                    self.class_to_md5[sc].append(md5)         
                              
                     samp = np.array(stim_ds, dtype='float')
                     if md5 in all_stims:

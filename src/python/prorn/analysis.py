@@ -6,7 +6,7 @@ import numpy as np
 
 import h5py
 
-from prorn.readout import train_readout_nn, train_readout_logit, train_readout_svm
+from prorn.readout import train_readout_nn
 from prorn.info import entropy_ratio, mutual_information
 from prorn.examples import run_many_nets
 
