@@ -9,6 +9,8 @@ import matplotlib.cm as cm
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
+import mayavi.mlab as mlab
+
 import h5py
 
 from prorn.config import *
@@ -17,6 +19,45 @@ from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
 from prorn.spectra import plot_pseudospectra
 from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca, get_info_data
+from prorn.morse import MorseStimSet
+
+def plot_trajectory(net_file, stim_file, net_key, exp_name, stim_key=None, stim_index=None, trial=None):
+    
+    if not ((stim_key is None) ^ (stim_index is None)):
+        print '[plot_trajectory] Either stim_key or stim_index must be supplied!'
+        return
+    
+    f = h5py.File(net_file, 'r')
+    resp_grp = f[net_key][exp_name]['responses']
+    if stim_key is None:
+        stim_keys = resp_grp.keys()    
+        stim_key = stim_keys[stim_index]
+        
+    stim_grp = resp_grp[stim_key]
+    stim_start = int(stim_grp.attrs['stim_start'])
+    stim_end = int(stim_grp.attrs['stim_end'])
+    resps = np.array(stim_grp['responses'])
+    f.close()
+    
+    if trial is None:
+        avg_resp = resps.mean(axis=0).squeeze()
+    else:
+        avg_resp = resps[trial, :, :].squeeze()
+    
+    stimset = MorseStimSet()
+    stimset.from_hdf5(stim_file)    
+    stim = stimset.all_stims[stim_key]
+    stimsym = stimset.md5_to_symbol[stim_key]
+    stim_str = '%s:%s' % (stimsym, ''.join(['%d' % s for s in stim]))
+
+    t = np.arange(0, avg_resp.shape[0])
+    
+    mlab.figure(bgcolor=(0.5, 0.5, 0.5), fgcolor=(0.0, 0.0, 0.0))
+    traj = mlab.plot3d(avg_resp[:, 0], avg_resp[:, 1], avg_resp[:, 2], t, colormap='hot', tube_radius=None)
+    mlab.points3d(avg_resp[stim_start, 0], avg_resp[stim_start, 1], avg_resp[stim_start, 2], scale_factor=0.050)
+    mlab.points3d(avg_resp[stim_end, 0], avg_resp[stim_end, 1], avg_resp[stim_end, 2], scale_factor=0.050)
+    mlab.title(stim_str)
+    
 
 def plot_prototypes(prototypes, noise_mean=0.0, noise_std=0.15):
     

@@ -7,7 +7,7 @@ from prorn.network import EchoStateNetwork
 from prorn.input import NullInputStream
 from prorn.sim import Simulation, run_sim
 
-from prorn.morse import get_stims_from_hdf5_flat
+from prorn.morse import MorseStimSet
 
 def create_inputless_net():
     
@@ -167,7 +167,8 @@ def create_morse_networks(net_file, num_nets=1, index_offset=0, num_nodes=3, inp
     
 def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='default', net_keys=None):
 
-    all_stims = get_stims_from_hdf5_flat(stim_file)
+    stimset = MorseStimSet()
+    stimset.from_hdf5(stim_file)
     f = h5py.File(net_file, 'a')
     
     burn_time = 100
@@ -192,7 +193,7 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
         
         #rebuild network and run
         net.compile()        
-        net_sims = run_sim(net, all_stims,
+        net_sims = run_sim(net, stimset.all_stims,
                            burn_time=burn_time,
                            pre_stim_time=pre_stim_time, post_stim_time=post_stim_time,
                            num_trials=num_trials)
@@ -212,7 +213,8 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
     f.close()
 
 def run_morse_experiments(stim_file, net_file):
-    run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_1.0')
-    run_morse_nets(stim_file, net_file, input_gain=0.5, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_0.5')
+    #run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_1.0')
+    #run_morse_nets(stim_file, net_file, input_gain=0.5, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_0.5')
+    run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.10, num_trials=15, exp_desc='noise_std_0.10-input_gain_1.0')
     
     

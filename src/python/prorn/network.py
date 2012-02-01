@@ -82,9 +82,12 @@ class EchoStateNetwork:
             if not 'is_input' in self.graph.node[n]:
                 initial_state.append(self.graph.node[n]['state'])
         
-        grp['initial_state'] = np.array(initial_state)
+        N = self.num_internal_nodes()
+        Nin = self.num_input_nodes()
+        
         grp['W'] = self.W
-        grp['Win'] = self.Win        
+        grp['Win'] = self.Win
+        grp['initial_state'] = np.array(initial_state)
         grp.attrs['type'] = '%s.%s' % (self.__module__, self.__class__.__name__)
     
     def from_hdf5(self, grp):

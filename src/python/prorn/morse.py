@@ -53,6 +53,37 @@ class MorseLetter():
         
         return jittered_samps
 
+class MorseStimSet:
+    def __init__(self, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
+        self.classes = classes
+        self.md5_to_symbol = {}
+        self.symbol_to_md5 = {}
+        self.all_stims = {}
+    
+    def from_hdf5(self, stim_file):
+        fstim = h5py.File(stim_file, 'r')
+    
+        all_stims = {}
+        for sc in self.classes:
+            sc_grp = fstim[sc]
+            for sym in sc_grp.keys():
+                
+                if sym not in self.symbol_to_md5:
+                    self.symbol_to_md5[sym] = []
+                sym_grp = sc_grp[sym]
+                for stim_id in sym_grp.keys():       
+                    stim_ds = sym_grp[stim_id]
+                    md5 = stim_ds.attrs['md5']
+                    self.symbol_to_md5[sym].append(md5)
+                    self.md5_to_symbol[md5] = sym
+                             
+                    samp = np.array(stim_ds, dtype='float')
+                    if md5 in all_stims:
+                        print 'WTF there are duplicate md5s: class=%s, stim_id=%s, md5=%s' % (sc, stim_id, md5)
+                    all_stims[md5] = samp
+        
+        fstim.close()    
+        self.all_stims = all_stims
     
 def parse_from_file(file_name, dot_length=2, dash_length=4):
 
@@ -163,26 +194,7 @@ def write_stim_to_hdf5(code_file, output_file):
     
     f.close()
     
-def get_stims_from_hdf5_flat(stim_file, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
-    
-    fstim = h5py.File(stim_file, 'r')
-    
-    all_stims = {}
-    for sc in classes:
-        sc_grp = fstim[sc]
-        for sym in sc_grp.keys():
-            sym_grp = sc_grp[sym]
-            for stim_id in sym_grp.keys():       
-                stim_ds = sym_grp[stim_id]
-                md5 = stim_ds.attrs['md5']         
-                samp = np.array(stim_ds, dtype='float')
-                if md5 in all_stims:
-                    print 'WTF there are duplicate md5s: class=%s, stim_id=%s, md5=%s' % (sc, stim_id, md5)
-                all_stims[md5] = samp
-        
-    fstim.close()
-    
-    return all_stims
+
 
 def get_hash_for_sample(samp, family=None):
     hash = hashlib.md5()
