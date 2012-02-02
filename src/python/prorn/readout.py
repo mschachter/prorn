@@ -51,27 +51,39 @@ def get_samples(net_file, net_key, exp_name, stim_keys, readout_time):
 def to_mvpa_dataset(stimset, samples):
     ds_data = []
     targets = []
-    for stim_key,samp in samples.iteritems():
-        sym = stimset.md5_to_symbol[stim_key]
-        targets.append(sym)
-        ds_data.append(samp)
+    for stim_key,samps in samples.iteritems():
+        for samp in samps:
+            sym = stimset.md5_to_symbol[stim_key]
+            targets.append(sym)
+            ds_data.append(samp)
     ds_data = np.array(ds_data)
-    np.shuffle(ds_data)
     
-    ds = dataset_wizard(ds_data, targets=targets)
-    return ds
+    train_len = int(0.75*ds_data.shape[0])
+    ds_indx = range(ds_data.shape[0])
+    np.random.shuffle(ds_indx)
+    train_index = ds_indx[:train_len]
+    valid_index = ds_indx[train_len:]
+    
+    ds_train = dataset_wizard(ds_data[train_index, :], targets=np.array(targets)[train_index])
+    ds_valid = dataset_wizard(ds_data[valid_index, :], targets=np.array(targets)[valid_index])
+    
+    return (ds_train, ds_valid)
 
 def train_readout_mnlogit(stimset, samples):
-    ds = to_mvpa_dataset(stimset, samples)
+    (ds_train, ds_valid) = to_mvpa_dataset(stimset, samples)
     clf = SMLR()
     
-    train_len = int(0.75*ds.shape[0])
+    clf.train(ds_train)
     
-    clf.train(ds[:train_len])
+    preds = clf.predict(ds_valid)
+    actual = ds_valid.sa['targets']
+    zeq = np.array([a == p for (a,p) in zip(actual, preds)])
+    nc = float(len((zeq == True).nonzero()[0])) 
+    print '%d correct out of %d' % (nc, len(preds))
+    percent_correct = nc / float(len(preds))
+    print 'Percent Correct: %0.3f' % percent_correct
     
-    preds = clf.predict(ds[train_len:])
-    
-    return (ds, clf, preds)
+    return (ds_train, ds_valid, clf, actual, preds)
 
 
 def train_readout_nn(net_file, net_key, readout_window=np.arange(0, 1), num_hidden=2):
