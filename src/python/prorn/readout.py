@@ -17,8 +17,42 @@ from mvpa2.clfs.smlr import SMLR
 
 from prorn.stim import stim_pca
 
+def combine_samples(net_file, net_keys, exp_name, stim_keys, readout_time):
+    
+    samps = {}
+    
+    #get individual samples from each net
+    individual_samps = []
+    for net_key in net_keys:
+        isamps = get_samples(net_file, net_key, exp_name, stim_keys, readout_time)
+        individual_samps.append(isamps)
+    
+    #assuming each experiment was run with an identical random seed
+    #for each network, and the number of trials is the same for each
+    #stimulus, concatenate all the samples
+    
+    concat_samps = {}
+    for stim_key in individual_samps[0].keys():
+        all_samps = []
+        
+        num_trials = -1
+        for k,isamps in enumerate(individual_samps):
+            net_samps = isamps[stim_key]
+            num_trials = len(net_samps)
+            all_samps.append(net_samps)
+            
+        concat_samps[stim_key] = []
+        for n in range(num_trials):
+            samp = []
+            for k,net_samps in enumerate(all_samps):
+                samp.extend(net_samps[n])
+            concat_samps[stim_key].append(samp)
+        
+    return concat_samps
+    
+
 def get_samples(net_file, net_key, exp_name, stim_keys, readout_time):
-    """ Sample from the state of a recurrent net in an hdf5 flie. The
+    """ Sample from the state of a recurrent net in an hdf5 file. The
         readout time is given relative to the end of the stimulus, so
         that readout_time=0 corresponds to the last time point in the
         stimulus.
@@ -79,13 +113,82 @@ def train_readout_mnlogit(stimset, samples):
     actual = ds_valid.sa['targets']
     zeq = np.array([a == p for (a,p) in zip(actual, preds)])
     nc = float(len((zeq == True).nonzero()[0])) 
-    print '%d correct out of %d' % (nc, len(preds))
+    #print '%d correct out of %d' % (nc, len(preds))
     percent_correct = nc / float(len(preds))
-    print 'Percent Correct: %0.3f' % percent_correct
+    print 'SMLogit Percent Correct: %0.3f' % percent_correct
     
     return (ds_train, ds_valid, clf, actual, preds)
 
+def get_np_dataset(stimset, samples):
+    
+    sym_to_index = {}
+    index_to_sym = {}
+    for k,sym in enumerate(stimset.symbol_to_md5.keys()):
+        sym_to_index[sym] = k
+        index_to_sym[k] = sym
+    
+    data = []
+    for stim_key,samps in samples.iteritems():
+        for samp in samps:
+            row = []
+            sym = stimset.md5_to_symbol[stim_key]
+            sym_index = sym_to_index[sym]
+            row.extend(samp)
+            row.append(sym_index)
+            data.append(row)
+    data = np.array(data)
+    np.random.shuffle(data)
+    
+    ntrain = int(0.75*data.shape[0])
+    train_data = data[:ntrain, :]
+    test_data = data[ntrain:, :]
+    
+    return (train_data, test_data, index_to_sym)
 
+def train_readout_logit(stimset, samples):
+    
+    (train_data, test_data, index_to_sym) = get_np_dataset(stimset, samples)
+        
+    N = train_data.shape[1]-1
+    logr = LogisticRegression(penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1)
+    logr.fit(train_data[:, :N], train_data[:, -1])
+        
+    test_pred = logr.predict(test_data[:, 0:N])
+    pred_diff = test_pred - test_data[:, -1]
+    percent_correct = len((pred_diff == 0).nonzero()[0]) / float(len(test_pred))
+    print 'Logit Percent correct: %0.3f' % percent_correct
+        
+
+def train_readout_logit_onevsall(stimset, samples):
+    
+    (train_data, test_data, index_to_sym) = get_np_dataset(stimset, samples)    
+    models = {}
+    
+    for sym_index,sym in index_to_sym.iteritems():
+        
+        #train a logistic regression model on just this stim class vs. the rest
+        mdata = copy.deepcopy(data)
+        data[data[:, -1] != sym_index, -1] = 0
+        data[data[:, -1] == sym_index, -1] = 1
+        print ''
+        print list(data)
+        print ''
+        
+        N = data.shape[1]-1
+        
+        logr = LogisticRegression(penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1)
+        logr.fit(train_data[:, :N], train_data[:, -1])
+        
+        test_pred = logr.predict(test_data[:, 0:N])
+        pred_diff = np.abs(test_pred - test_data[:, -1])
+        zero_one_loss = pred_diff.sum() / test_data.shape[0]
+        print 'Stim class %s loss: %0.3f' % (sym, zero_one_loss)
+        
+        models[sym] = logr
+        
+    
+    
+    
 def train_readout_nn(net_file, net_key, readout_window=np.arange(0, 1), num_hidden=2):
         
     (samps, all_stim_classes, Ninternal) = get_samples(net_file, net_key, readout_window)

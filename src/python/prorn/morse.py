@@ -54,13 +54,15 @@ class MorseLetter():
         return jittered_samps
 
 class MorseStimSet:
-    def __init__(self, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
+    def __init__(self, stim_file=None, classes=['standard', 'time_warped', 'jitter', 'length_noise', 'jitter_and_length_noise']):
         self.classes = classes
         self.md5_to_symbol = {}
         self.symbol_to_md5 = {}
         self.md5_to_class = {}
         self.class_to_md5 = {}
         self.all_stims = {}
+        if stim_file is not None:
+            self.from_hdf5(stim_file)
     
     def from_hdf5(self, stim_file):
         fstim = h5py.File(stim_file, 'r')

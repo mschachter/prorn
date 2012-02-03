@@ -9,6 +9,8 @@ from prorn.sim import Simulation, run_sim
 
 from prorn.morse import MorseStimSet
 
+RANDOM_SEED = 32588987237
+
 def create_inputless_net():
     
     net = EchoStateNetwork()
@@ -165,7 +167,7 @@ def create_morse_networks(net_file, num_nets=1, index_offset=0, num_nodes=3, inp
     
     f.close()
     
-def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='default', net_keys=None):
+def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='default', net_keys=None, fixed_seed=None):
 
     stimset = MorseStimSet()
     stimset.from_hdf5(stim_file)
@@ -179,7 +181,11 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
         net_keys = f.keys()
     
     for net_key in net_keys:
-        
+        if fixed_seed is not None:
+            #use a fixed random seed so each network sees the same set of random stimuli
+            print 'Using fixed random seed..'
+            np.random.seed(fixed_seed)
+            
         print 'Running network %s' % net_key
         net_grp = f[net_key]
         
@@ -212,9 +218,9 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
 
     f.close()
 
-def run_morse_experiments(stim_file, net_file):
+def run_morse_experiments(stim_file, net_file, num_trials=15):
     #run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_1.0')
     #run_morse_nets(stim_file, net_file, input_gain=0.5, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_0.5')
-    run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.10, num_trials=15, exp_desc='noise_std_0.10-input_gain_1.0')
+    run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.10, num_trials=num_trials, exp_desc='noise_std_0.10-input_gain_1.0', fixed_seed=RANDOM_SEED)
     
     
