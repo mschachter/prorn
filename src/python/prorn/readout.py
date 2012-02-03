@@ -17,6 +17,38 @@ from mvpa2.clfs.smlr import SMLR
 
 from prorn.stim import stim_pca
 
+def get_net_performance(net_file, exp_name, stim_class, perf_type='mnlogit'):
+    
+    perfs = {}
+    f = h5py.File(net_file, 'r')    
+    for net_key in f.keys():
+        perf = float(f[net_key][exp_name]['performance'][stim_class][perf_type][()])
+        perfs[net_key] = perf
+    return perfs
+    
+
+def compute_performance_per_net(net_file, exp_name, stimset, stim_class, readout_time):
+    
+    stim_keys = stimset.class_to_md5[stim_class]
+    f = h5py.File(net_file, 'a')
+    
+    for net_key in f.keys():        
+        samps = get_samples(net_file, net_key, exp_name, stim_keys, readout_time)
+        mn_perf = train_readout_mnlogit(stimset, samps)
+        l_perf = train_readout_logit(stimset, samps)
+        
+        if 'performance' not in f[net_key][exp_name]:
+            f[net_key][exp_name].create_group('performance')
+        perf_grp = f[net_key][exp_name]['performance']
+        if stim_class not in perf_grp:
+            perf_grp.create_group(stim_class)
+        stim_grp = perf_grp[stim_class]
+        stim_grp['mnlogit'] = mn_perf
+        stim_grp['logit'] = l_perf
+        
+    f.close()
+    
+
 def combine_samples(net_file, net_keys, exp_name, stim_keys, readout_time):
     
     samps = {}
@@ -117,7 +149,7 @@ def train_readout_mnlogit(stimset, samples):
     percent_correct = nc / float(len(preds))
     print 'SMLogit Percent Correct: %0.3f' % percent_correct
     
-    return (ds_train, ds_valid, clf, actual, preds)
+    return percent_correct
 
 def get_np_dataset(stimset, samples):
     
@@ -157,6 +189,7 @@ def train_readout_logit(stimset, samples):
     pred_diff = test_pred - test_data[:, -1]
     percent_correct = len((pred_diff == 0).nonzero()[0]) / float(len(test_pred))
     print 'Logit Percent correct: %0.3f' % percent_correct
+    return percent_correct
         
 
 def train_readout_logit_onevsall(stimset, samples):
