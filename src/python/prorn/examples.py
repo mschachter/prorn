@@ -1,4 +1,5 @@
 import h5py
+import copy
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -6,6 +7,7 @@ import matplotlib.pyplot as plt
 from prorn.network import EchoStateNetwork
 from prorn.input import NullInputStream
 from prorn.sim import Simulation, run_sim
+from prorn.readout import train_readout_mnlogit
 
 from prorn.morse import MorseStimSet
 
@@ -217,6 +219,64 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
             sim.to_hdf5(stim_grp)
 
     f.close()
+
+def run_morse_nets_online(stim_file, num_trials=20, stack_size=100,
+                          num_nodes=3, input_gain=1.0, noise_std=0.0, fixed_seed=None,
+                          stim_class='standard'):
+    
+    stimset = MorseStimSet()
+    stimset.from_hdf5(stim_file)
+   
+    burn_time = 100
+    post_stim_time = 1
+    pre_stim_time = -1
+    
+    if fixed_seed is not None:
+        #use a fixed random seed so each network sees the same set of random stimuli
+        print 'Using fixed random seed..'
+        np.random.seed(fixed_seed)
+    
+    #get stims
+    stim_md5s = stimset.class_to_md5[stim_class]
+    all_stims = {}
+    for md5 in stim_md5s:
+        all_stims[md5] = stimset.all_stims[md5]
+        
+    net_number = 0
+    while True:
+            
+        #read network weights from hdf5
+        net = create_fullyconnected_net(num_nodes=num_nodes)        
+        net.noise_std = noise_std
+        
+        #try out each input node, see which one works best
+        best_performance = -np.Inf
+        best_input_node = 0
+
+        for input_node in range(3):
+            
+            net_copy = copy.deepcopy(net)
+            net_copy.create_input(0)
+            net_copy.connect_input(0, input_node, input_gain)
+            net_copy.compile()
+            net_sims = run_sim(net_copy, all_stims,
+                               burn_time=burn_time,
+                               pre_stim_time=pre_stim_time, post_stim_time=post_stim_time,
+                               num_trials=num_trials)
+            
+            all_samps = {}
+            for md5,sim in net_sims.iteritems():
+                all_samps[md5] = sim.responses[:, 0, :].squeeze()
+            
+            percent_correct = train_readout_mnlogit(stimset, all_samps)
+            if percent_correct > best_performance:
+                best_performance = percent_correct
+                best_input_node = input_node
+                
+        print 'Net %d (input=%d) got %0.2f correct' % (net_number, best_input_node, best_performance)
+                
+        net_number += 1
+    
 
 def run_morse_experiments(stim_file, net_file, num_trials=15):
     #run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trials=1, exp_desc='noise_std_0.0-input_gain_1.0')

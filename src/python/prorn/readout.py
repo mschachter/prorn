@@ -118,8 +118,8 @@ def to_mvpa_dataset(stimset, samples):
     ds_data = []
     targets = []
     for stim_key,samps in samples.iteritems():
+        sym = stimset.md5_to_symbol[stim_key]
         for samp in samps:
-            sym = stimset.md5_to_symbol[stim_key]
             targets.append(sym)
             ds_data.append(samp)
     ds_data = np.array(ds_data)
@@ -147,7 +147,7 @@ def train_readout_mnlogit(stimset, samples):
     nc = float(len((zeq == True).nonzero()[0])) 
     #print '%d correct out of %d' % (nc, len(preds))
     percent_correct = nc / float(len(preds))
-    print 'SMLogit Percent Correct: %0.3f' % percent_correct
+    #print 'SMLogit Percent Correct: %0.3f' % percent_correct
     
     return percent_correct
 

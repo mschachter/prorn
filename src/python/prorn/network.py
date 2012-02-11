@@ -157,13 +157,13 @@ class EchoStateNetwork:
                     self.W[i1, i2] = edge_attrs['weight']
         
         #initialize input
-        if len(input_nodes) > 0:
+        if len(input_nodes) > 0:            
             self.Win = np.zeros([N, Nin])
             for n1,n2 in self.graph.edges():
                 if 'is_input' in self.graph.node[n1]:
                     input_index = self.input_node2index[n1]
-                    node_index = self.node2index[n2]
-                    self.Win[input_index, node_index] = self.graph[n1][n2]['weight']                    
+                    node_index = self.node2index[n2]                                        
+                    self.Win[node_index, input_index] = self.graph[n1][n2]['weight']
         
         self.compiled = True
         
