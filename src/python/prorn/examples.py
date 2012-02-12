@@ -220,9 +220,9 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
 
     f.close()
 
-def run_morse_nets_online(stim_file, num_trials=20, stack_size=100,
+def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
                           num_nodes=3, input_gain=1.0, noise_std=0.0, fixed_seed=None,
-                          stim_class='standard'):
+                          stim_class='standard', num_nets=10, output_file=None):
     
     stimset = MorseStimSet()
     stimset.from_hdf5(stim_file)
@@ -242,8 +242,10 @@ def run_morse_nets_online(stim_file, num_trials=20, stack_size=100,
     for md5 in stim_md5s:
         all_stims[md5] = stimset.all_stims[md5]
         
-    net_number = 0
-    while True:
+    net_stack = [(None, None, None)]*stack_size
+    net_performances = np.zeros([stack_size])
+        
+    for k in range(num_nets):
             
         #read network weights from hdf5
         net = create_fullyconnected_net(num_nodes=num_nodes)        
@@ -272,10 +274,33 @@ def run_morse_nets_online(stim_file, num_trials=20, stack_size=100,
             if percent_correct > best_performance:
                 best_performance = percent_correct
                 best_input_node = input_node
+                best_net = net_copy
                 
-        print 'Net %d (input=%d) got %0.2f correct' % (net_number, best_input_node, best_performance)
-                
-        net_number += 1
+        print 'Net %d (input=%d) got %0.2f correct' % (k, best_input_node, best_performance)
+        
+        min_perf = net_performances.min()
+        if min_perf < best_performance:
+            min_perf_index = net_performances.argmin()
+            net_stack[min_perf_index] = (net, best_input_node, best_net)
+            net_performances[min_perf_index] = best_performance
+
+    if output_file is not None:
+        
+        f = h5py.File(output_file, 'w')
+        for k,(sim, input_node, net) in enumerate(net_stack):
+            perf = net_performances[k]
+            net_name = 'net_%d' % k
+            
+            net_grp = f.create_group(net_name)
+            net.to_hdf5(net_grp)
+            
+            perf_grp = net_grp.create_group('performance')
+            perf_grp[stim_class] = perf
+        
+        f.close()
+    
+
+    return (net_stack, net_performances)
     
 
 def run_morse_experiments(stim_file, net_file, num_trials=15):
