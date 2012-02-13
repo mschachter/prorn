@@ -2,6 +2,7 @@ import os
 import time
 import operator
 
+import pylab
 import scipy
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,7 +19,7 @@ from prorn.info import fisher_memory_matrix
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
 from prorn.spectra import plot_pseudospectra
-from prorn.analysis import get_perfs, filter_perfs, top100_weight_pca, get_info_data
+from prorn.analysis import top100_weight_pca
 from prorn.morse import MorseStimSet
 
 def plot_trajectory(net_file, stim_file, net_key, exp_name, stim_key=None, stim_index=None, trial=None):
@@ -79,64 +80,7 @@ def plot_prototypes(prototypes, noise_mean=0.0, noise_std=0.15):
     
     plt.show()
   
-def plot_stimuli(stim_file):
-    
-    f = h5py.File(stim_file, 'r')
-    
-    stim_keys = f.keys() 
-    plen = len(stim_keys)
-    
-    for k,stim_key in enumerate(stim_keys):
-        
-        ax = plt.subplot(plen, 1, k+1)
-        
-        sp = StimPrototype()
-        sp.from_hdf5(f, stim_key)
-        
-        stim_samps = np.array(f[stim_key]['samples'])
-        nsamps = stim_samps.shape[0]        
-                
-        sproto = sp.get_prototype().squeeze()        
-        t = np.arange(0, sp.stim_len)
-        plt.plot(t, sproto, 'k-', linewidth=2)
-        
-        for k in range(nsamps):
-            s = stim_samps[k, :].squeeze()
-            plt.plot(t, s)
-            
-    f.close()
-    plt.show()
-
-  
-def plot_info_data(net_files):
-    
-    idata = get_info_data(net_files)
-    
-    plt.clf()
-    fig = plt.gcf()
-    
-    for k,(nbins,ilist) in enumerate(idata.iteritems()):
-        H = np.array([x[0] for x in ilist])
-        MI = np.array([x[1] for x in ilist])
-        
-        nzi = MI >= 0.0
-        print '# of positive MIs: %d' % len(nzi.nonzero()[0])
-        
-        sp_indx = k*2 + 1
-        
-        ax = fig.add_subplot(len(idata), 2, sp_indx)
-        ax.hist(H[nzi], bins=20)
-        ax.set_xlabel('Entropy (nbins=%d)' % nbins)
-        plt.axis('tight')
-        
-        ax = fig.add_subplot(len(idata), 2, sp_indx+1)
-        ax.hist(MI[nzi], bins=20)
-        ax.set_xlabel('Mutual Information (nbins=%d)' % nbins)
-        plt.axis('tight')
-            
-    plt.show()
-    
-  
+      
 def plot_single_net_and_stim_movie(stim_file, net_file, net_key, stim_key, trial, output_file):
     
     #get stim
@@ -266,116 +210,20 @@ def plot_readout_data(net_file, net_key, readout_window):
     plt.show()
     
 
-def plot_perf_histograms(pdata, filter=True):
+def plot_perf_histograms(pdata):
     
-    if filter:
-        pdata = filter_perfs(pdata)
-    
-    nn_perfs = np.array([p.nn_perf for p in pdata])
     logit_perfs = np.array([p.logit_perf for p in pdata])
-    ers = np.array([p.entropy_ratio for p in pdata])
     
     plt.clf()
     
     fig = plt.gcf()    
-    ax = fig.add_subplot(3, 1, 1)
-    ax.hist(nn_perfs, bins=25)
-    ax.set_title('% Correct (NN Readout)')
-    plt.axis('tight')
-    
-    ax = fig.add_subplot(3, 1, 2)
-    ax.hist(logit_perfs, bins=25)
-    ax.set_title('% Correct (Logit Readout)')
-    plt.axis('tight')
-    
-    ax = fig.add_subplot(3, 1, 3)
-    ax.hist(ers, bins=25)
-    ax.set_title('Entropy Ratio')
-    plt.axis('tight')
-    
-    plt.show()
-    
-def plot_mi_vs_eig_vs_perf(pdata, filter=True):
-    if filter:
-        pdata = filter_perfs(pdata, mi_cutoff=0.0)
-        
-    nn_perfs = np.array([p.nn_perf for p in pdata])    
-    mi = np.array([p.mutual_information for p in pdata])
-    
-    nn_perfs_norm = 1.0 - (nn_perfs / nn_perfs.max())
-    
-    ev1 = []
-    ev2 = []
-    for p in pdata:
-        ev1.append([p.eigen_values[0].real, p.eigen_values[0].imag])
-        ev2.append([p.eigen_values[1].real, p.eigen_values[1].imag])
-    ev1 = np.array(ev1)
-    ev2 = np.array(ev2)   
-    ev1_mod = np.sqrt((ev1**2).sum(axis=1))    
-    ev2_mod = np.sqrt((ev2**2).sum(axis=1))
-
-    plt.clf()
-    fig = plt.gcf()
-    
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.scatter(ev1_mod, ev2_mod, mi)
-    ax.set_xlabel('$|\lambda_1|$')
-    ax.set_ylabel('$|\lambda_2|$')
-    ax.set_zlabel('Mutual Information')
-    
-    """
-    plt.clf()
-    fig = plt.gcf()
-    
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    for k in range(len(nn_perfs_norm)):
-        r = nn_perfs_norm[k]
-        g = 0
-        b = 1.0 - nn_perfs_norm[k]
-        ax.scatter([ev1_mod[k]], [ev2_mod[k]], [mi[k]], c=(r, g, b), s=30)
-    ax.set_xlabel('$|\lambda_1|$')
-    ax.set_ylabel('$|\lambda_2|$')
-    ax.set_zlabel('Mutual Information')
-    """
-    
-    plt.show()
-    
-    
-
-def plot_entropy_ratio_vs_perf(pdata, filter=True):
-    
-    if filter:
-        pdata = filter_perfs(pdata, mi_cutoff=0.0)
-
-    nn_perfs = 1.0 - (np.array([p.nn_perf for p in pdata]) / 100.0)
-    logit_perfs = 1.0 - np.array([p.logit_perf for p in pdata])
-    mi = np.array([p.mutual_information for p in pdata])
-    entropy = np.array([p.entropy for p in pdata])
-    entropy_ratios = np.array([p.entropy_ratio for p in pdata])
-                
-    plt.clf()
-    fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1)
-    ax.plot(logit_perfs, nn_perfs, 'o', markerfacecolor='gray')
-    plt.xlabel('% Correct (Logit Readout)')
-    plt.ylabel('% Correct (NN Readout)')
-    plt.axis('tight')
-    
-    fig = plt.figure()
-    ax = fig.add_subplot(2, 1, 1)
-    ax.plot(mi, nn_perfs, 'o', markerfacecolor='orange')
-    plt.xlabel('Mutual Information (bits)')
-    plt.ylabel('% Correct (NN Readout)')
-    plt.axis('tight')
-    
-    ax = fig.add_subplot(2, 1, 2)
-    ax.plot(mi, logit_perfs, 'o', markerfacecolor='orange')
-    plt.xlabel('Mutual Information (bits)')
-    plt.ylabel('% Correct (Logit Readout)')
+    ax.hist(logit_perfs, bins=25)
+    ax.set_title('% Correct (MNLogit Readout)')
     plt.axis('tight')
     
     plt.show()
-
+    
 def plot_top100_weights_cov(pdata):
 
     (weights, wcov, evals, evecs, proj, nn_perfs) = top100_weight_pca(pdata)
@@ -407,11 +255,8 @@ def plot_top100_weights_cov(pdata):
     plt.show()
      
 
-def plot_top_100_weights(pdata, filter=True):
-    if filter:
-        pdata = filter_perfs(pdata)
+def plot_top_100_weights(pdata):
         
-    pdata.sort(key=operator.attrgetter('nn_perf'))
     weights = []
     for p in pdata[0:100]:
         fname = os.path.join(DATA_DIR, p.file_name)
@@ -469,9 +314,6 @@ def plot_top_100_weights(pdata, filter=True):
 
 def plot_eigenvalues_vs_perf(pdata, filter=True):
     
-    if filter:
-        pdata = filter_perfs(pdata)
-        
     nn_perfs = np.array([p.nn_perf for p in pdata])
     logit_perfs = np.array([p.logit_perf for p in pdata])
         
@@ -586,24 +428,15 @@ def plot_stim_pca(stim_file):
 
 def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf'):
     
-    pdata = filter_perfs(pdata)
-    
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
-    pdata.sort(key=operator.attrgetter(perf_attr))
     weights = [[], []]
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(DATA_DIR, p.file_name)
-            net_key = p.net_key
-            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
-            f = h5py.File(fname, 'r')
-            W = np.array(f[net_key]['W'])
-            weights[k].append(W)        
-            f.close()
-    
+            weights[k].append(p.W)        
+            
     perrow = int(np.sqrt(num_plots))
     percol = perrow
     
@@ -612,19 +445,20 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf'):
         fig.subplots_adjust(wspace=0.1, hspace=0.1)    
         for k in range(num_plots):
             W = weights[j][k]
+            N = W.shape[0]
             ax = fig.add_subplot(perrow, percol, k)
-            plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=False)
+            plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=True)
             plt.axhline(0.0, color='k', axes=ax)
             plt.axvline(0.0, color='k', axes=ax)
-            plt.axhline(1.0, color='gray', axes=ax)
-            plt.axhline(-1.0, color='gray', axes=ax)
-            plt.axvline(1.0, color='gray', axes=ax)
-            plt.axvline(-1.0, color='gray', axes=ax)
+            
+            cir = pylab.Circle((0.0, 0.0), radius=1.00,  fc='gray', fill=False)
+            pylab.gca().add_patch(cir)
+            
             plt.xticks([], [])
             plt.yticks([], [])
             
             p = pdata[offset + k]
-            for m in range(3):
+            for m in range(N):
                 ev = p.eigen_values[m]
                 ax.plot(ev.real, ev.imag, 'ko', markerfacecolor='w')
         if offset == 0:
@@ -636,9 +470,6 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf'):
 
     
 def plot_perf_by_schur_offdiag(pdata, perf_attr='logit_perf'):
-    
-    pdata = filter_perfs(pdata)    
-    pdata.sort(key=operator.attrgetter(perf_attr))
     
     perfs = []
     schur_offdiag_sum = []
@@ -662,27 +493,18 @@ def plot_perf_by_schur_offdiag(pdata, perf_attr='logit_perf'):
     plt.ylabel('Performance')
     plt.xlabel('Sum')
     plt.show()
-    
+
     
 def plot_schur_by_perf(pdata, perf_attr='logit_perf'):
-    
-    pdata = filter_perfs(pdata)
     
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
-    pdata.sort(key=operator.attrgetter(perf_attr))
     weights = [[], []]
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(DATA_DIR, p.file_name)
-            net_key = p.net_key
-            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
-            f = h5py.File(fname, 'r')
-            W = np.array(f[net_key]['W'])
-            weights[k].append(W)        
-            f.close()
+            weights[k].append(p.W)
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -694,7 +516,7 @@ def plot_schur_by_perf(pdata, perf_attr='logit_perf'):
             W = weights[j][k]
             (T, Z) = scipy.linalg.schur(W, 'complex')
             M = np.abs(T)
-            M -= np.diag(np.diag(M))            
+            #M -= np.diag(np.diag(M))
             
             """
             (evals, evecs) = np.linalg.eig(W)
@@ -724,26 +546,18 @@ def plot_schur_by_perf(pdata, perf_attr='logit_perf'):
     
 def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
     
-    pdata = filter_perfs(pdata)
-    
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
-    pdata.sort(key=operator.attrgetter(perf_attr))
     weights = [[], []]
     inputs = [[], []]
+    perfs = [[], []] 
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(DATA_DIR, p.file_name)
-            net_key = p.net_key
-            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
-            f = h5py.File(fname, 'r')
-            W = np.array(f[net_key]['W'])
-            Win = np.array(f[net_key]['Win']).squeeze()
-            weights[k].append(W)
-            inputs[k].append(Win)
-            f.close()
+            weights[k].append(p.W)
+            inputs[k].append(p.Win)
+            perfs[k].append(p.logit_perf)
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -759,7 +573,7 @@ def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
             
             ax = fig.add_subplot(perrow, percol, k)
             ax.imshow(J, interpolation='nearest', cmap=cm.jet)
-            #ax.set_title('%0.2f' % M.sum())            
+            #ax.set_title('%0.2f' % perfs[j][k])            
             plt.xticks([], [])
             plt.yticks([], [])
             
@@ -774,26 +588,16 @@ def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
 
 def plot_fmc_by_perf(pdata, perf_attr='logit_perf'):
     
-    pdata = filter_perfs(pdata)
-    
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
-    pdata.sort(key=operator.attrgetter(perf_attr))
     weights = [[], []]
     inputs = [[], []]
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            fname = os.path.join(DATA_DIR, p.file_name)
-            net_key = p.net_key
-            print 'k=%d, offset=%d, pdata[%d] (file_name=%s, net_key=%s)' % (k, offset, m,  p.file_name, net_key)
-            f = h5py.File(fname, 'r')
-            W = np.array(f[net_key]['W'])
-            Win = np.array(f[net_key]['Win']).squeeze()
-            weights[k].append(W)
-            inputs[k].append(Win)
-            f.close()
+            weights[k].append(p.W)
+            inputs[k].append(p.Win)            
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -826,20 +630,10 @@ def plot_fmc_by_perf(pdata, perf_attr='logit_perf'):
 
 def plot_perf_by_jtot(pdata, perf_attr='logit_perf'):
     
-    pdata = filter_perfs(pdata)    
-    pdata.sort(key=operator.attrgetter(perf_attr))
-    
     perfs = []
     jtots = []
     for m,p in enumerate(pdata):
-        fname = os.path.join(DATA_DIR, p.file_name)
-        net_key = p.net_key
-        f = h5py.File(fname, 'r')
-        W = np.array(f[net_key]['W'])
-        Win = np.array(f[net_key]['Win']).squeeze()
-        v = Win.squeeze()
-        f.close()
-        J = fisher_memory_matrix(W, v)
+        J = fisher_memory_matrix(p.W, p.Win)
         fmc = np.diag(J)
         #fmc /= fmc.max()
         perfs.append(getattr(p, perf_attr))
@@ -854,9 +648,6 @@ def plot_perf_by_jtot(pdata, perf_attr='logit_perf'):
     plt.show()
 
 def plot_perf_by_jsum(pdata, perf_attr='logit_perf'):
-    
-    pdata = filter_perfs(pdata)    
-    pdata.sort(key=operator.attrgetter(perf_attr))
     
     perfs = []
     jtots = []

@@ -255,7 +255,7 @@ def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
         best_performance = -np.Inf
         best_input_node = 0
 
-        for input_node in range(3):
+        for input_node in range(num_nodes):
             
             net_copy = copy.deepcopy(net)
             net_copy.create_input(0)

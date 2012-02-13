@@ -19,14 +19,15 @@ def compute_pseudospectra(A, bounds, npts):
             Z[m, n] = np.complex(X[m, n], Y[m, n])
             R = Z[m, n]*I - A
             (U, S, V) = np.linalg.svd(R)
-            smin[m][n] = np.min(S)
+            smin[m][n] = np.min(S)**-1
     
     return (Z, smin)
 
-def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=False):
+def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=True):
     
     (Z, smin) = compute_pseudospectra(A, bounds, npts)
     
+    fig = plt.gcf()    
     if ax is None:        
         ax = fig.add_subplot(1, 1, 1)
     if log:
