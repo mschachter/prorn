@@ -30,7 +30,8 @@ def create_inputless_net():
     
     return net
 
-def create_fullyconnected_net(num_nodes, rescale_frac=0.999, noise_std=0.0, random_initial_state=False):
+def create_fullyconnected_net(num_nodes, rescale_frac=0.999, noise_std=0.0, random_initial_state=False,
+                              symmetric=False):
     
     net = EchoStateNetwork()
     net.noise_std = noise_std
@@ -41,10 +42,16 @@ def create_fullyconnected_net(num_nodes, rescale_frac=0.999, noise_std=0.0, rand
         if random_initial_state:
             istate = np.abs(np.random.randn()) 
         net.create_node(n, initial_state=istate)
-        
+    
+    W = np.random.randn(num_nodes, num_nodes)
+    if symmetric:
+        for k1 in range(num_nodes):
+            for k2 in range(k1):
+                W[k2, k1] = W[k1, k2]
+    
     for k1 in range(num_nodes):
         for k2 in range(num_nodes):
-            net.connect_nodes(k1, k2, np.random.randn())
+            net.connect_nodes(k1, k2, W[k1, k2])
     
     net.rescale_weights(rescale_frac)
     
@@ -222,7 +229,8 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
 
 def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
                           num_nodes=3, input_gain=1.0, noise_std=0.0, fixed_seed=None,
-                          stim_class='standard', num_nets=10, output_file=None):
+                          stim_class='standard', num_nets=10, output_file=None,
+                          symmetric=False):
     
     stimset = MorseStimSet()
     stimset.from_hdf5(stim_file)
@@ -248,7 +256,7 @@ def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
     for k in range(num_nets):
             
         #read network weights from hdf5
-        net = create_fullyconnected_net(num_nodes=num_nodes)        
+        net = create_fullyconnected_net(num_nodes=num_nodes, symmetric=symmetric)        
         net.noise_std = noise_std
         
         #try out each input node, see which one works best

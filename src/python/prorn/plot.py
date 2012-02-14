@@ -10,7 +10,10 @@ import matplotlib.cm as cm
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-import mayavi.mlab as mlab
+try:
+    import mayavi.mlab as mlab
+except:
+    import enthought.mayavi.mlab as mlab
 
 import h5py
 
@@ -18,8 +21,8 @@ from prorn.config import *
 from prorn.info import fisher_memory_matrix
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
-from prorn.spectra import plot_pseudospectra
-from prorn.analysis import top100_weight_pca
+from prorn.spectra import plot_pseudospectra, plot_pseudospectra_contour
+from prorn.analysis import top100_weight_pca, get_top_perfs
 from prorn.morse import MorseStimSet
 
 def plot_trajectory(net_file, stim_file, net_key, exp_name, stim_key=None, stim_index=None, trial=None):
@@ -426,7 +429,7 @@ def plot_stim_pca(stim_file):
         
     plt.show()
 
-def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf'):
+def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, levels=None):
     
     num_plots = 25
     
@@ -447,7 +450,10 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf'):
             W = weights[j][k]
             N = W.shape[0]
             ax = fig.add_subplot(perrow, percol, k)
-            plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=True)
+            if contour:
+                plot_pseudospectra_contour(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=False, levels=levels)
+            else:
+                plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=True, log=True)
             plt.axhline(0.0, color='k', axes=ax)
             plt.axvline(0.0, color='k', axes=ax)
             
@@ -494,17 +500,54 @@ def plot_perf_by_schur_offdiag(pdata, perf_attr='logit_perf'):
     plt.xlabel('Sum')
     plt.show()
 
-    
-def plot_schur_by_perf(pdata, perf_attr='logit_perf'):
+def plot_commutivity(pdata, perf_attr='logit_perf'):
     
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
     weights = [[], []]
+    comm = [[], []]
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
             weights[k].append(p.W)
+            W = np.matrix(p.W)
+            Wt = np.matrix(np.transpose(p.W))
+            c1 = W*Wt
+            c2 = Wt*W
+            cdiff = (c1 - c2).sum()
+            comm[k].append(cdiff)
+    
+    top_cdiff = np.array(comm[0])
+    bottom_cdiff = np.array(comm[1])
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(2, 1, 1)
+    ax.hist(top_cdiff, bins=20)
+    ax.set_title('Commutivity Differences: Top 25')
+    ax = fig.add_subplot(2, 1, 2)    
+    ax.hist(bottom_cdiff, bins=20)
+    ax.set_title('Commutivity Differences: Bottom 25')
+        
+    
+
+def plot_schur_by_perf(pdata, perf_attr='logit_perf', show_unitary=False):
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    weights = [[], []]
+    comm = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            weights[k].append(p.W)
+            W = np.matrix(p.W)
+            Wt = np.matrix(np.transpose(p.W))
+            c1 = W*Wt
+            c2 = Wt*W
+            cdiff = (c1 - c2).sum()
+            comm[k].append(cdiff)
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -515,23 +558,14 @@ def plot_schur_by_perf(pdata, perf_attr='logit_perf'):
         for k in range(num_plots):
             W = weights[j][k]
             (T, Z) = scipy.linalg.schur(W, 'complex')
-            M = np.abs(T)
-            #M -= np.diag(np.diag(M))
-            
-            """
-            (evals, evecs) = np.linalg.eig(W)
-            osum = complex(0.0)
-            for m in range(3):
-                for n in range(m+1, 3):
-                    v1 = evecs[:, m]
-                    v2 = evecs[:, n]
-                    dp = np.dot(v1, v2)                    
-                    osum += dp
-            """
+            if show_unitary:
+                M = np.abs(np.transpose(Z))
+            else:
+                M = np.abs(T)
             
             ax = fig.add_subplot(perrow, percol, k)
             ax.imshow(M, interpolation='nearest', vmin=-1.0, vmax=1.0, cmap=cm.jet)
-            #ax.set_title('%0.2f' % M.sum())            
+            ax.set_title('%0.2f' % comm[j][k])            
             plt.xticks([], [])
             plt.yticks([], [])
             
@@ -672,7 +706,20 @@ def plot_perf_by_jsum(pdata, perf_attr='logit_perf'):
     plt.ylabel('Performance')
     plt.show()
 
+def plot_perf_hists(top_net_files):
+    
+    for k,tfile in enumerate(top_net_files):
+        (rdir, fname) = os.path.split(tfile)
+        pdata = get_top_perfs(tfile)
+        perfs = np.array([p.logit_perf for p in pdata])
+        
+        plt.subplot(len(top_net_files), 1, k+1)
+        plt.hist(perfs, bins=20)
+        plt.title('%s: mean=%0.2f +/- %0.2f' % (fname, perfs.mean(), perfs.std()))
+        plt.xlim((0, 1.00))
+    
+    plt.show()
+
 def save_to_png(fig, output_file):
     canvas = FigureCanvasAgg(fig)
     canvas.print_png(output_file, dpi=72)
-    

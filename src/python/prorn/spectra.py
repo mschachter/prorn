@@ -21,11 +21,11 @@ def compute_pseudospectra(A, bounds, npts):
             (U, S, V) = np.linalg.svd(R)
             smin[m][n] = np.min(S)**-1
     
-    return (Z, smin)
+    return (X, Y, Z, smin)
 
 def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=True):
     
-    (Z, smin) = compute_pseudospectra(A, bounds, npts)
+    (X, Y, Z, smin) = compute_pseudospectra(A, bounds, npts)
     
     fig = plt.gcf()    
     if ax is None:        
@@ -36,4 +36,21 @@ def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True
     if colorbar:
         fig = plt.gcf()
         fig.colorbar(res)
+
+def plot_pseudospectra_contour(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=True, levels=None):
+    
+    (X, Y, Z, smin) = compute_pseudospectra(A, bounds, npts)
+    
+    fig = plt.gcf()    
+    if ax is None:        
+        ax = fig.add_subplot(1, 1, 1)
+    if log:
+        smin = np.log10(smin)
+    if levels is None:
+        res = ax.contour(X, Y, smin)
+        plt.clabel(res, fontsize=9, inline=1)
+    else:
+        res = ax.contour(X, Y, smin, levels=levels)
+        
+    
     
