@@ -8,7 +8,7 @@ import h5py
 
 from prorn.readout import train_readout_nn
 from prorn.info import entropy_ratio, mutual_information
-from prorn.examples import run_many_nets
+from prorn.network import EchoStateNetwork
 
 class PerformanceData:
     def __init__(self):
@@ -102,14 +102,19 @@ def get_top_perfs(top_file):
     f = h5py.File(top_file, 'r')
     for net_key in f.keys():
         net_grp = f[net_key]
-        W = np.array(net_grp['W'])
-        Win = np.array(net_grp['Win'])
+        net = EchoStateNetwork()
+        net.from_hdf5(net_grp)
+        net.compile()
+        W = net.W
+        Win = net.Win
         input_node = Win.argmax()
         lperf = float(net_grp['performance']['standard'][()])
         (evals, evecs) = np.linalg.eig(W)
         
         pdata = PerformanceData()
         pdata.file_name = top_file
+        pdata.net = net
+        pdata.net_key = net_key
         pdata.input_node = input_node
         pdata.logit_perf = lperf
         pdata.W = W

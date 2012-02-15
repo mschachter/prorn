@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-def compute_pseudospectra(A, bounds, npts):
+def compute_pseudospectra(A, bounds, npts, invert=True):
     
     (minr, maxr, mini, maxi) = bounds
     
@@ -19,7 +19,10 @@ def compute_pseudospectra(A, bounds, npts):
             Z[m, n] = np.complex(X[m, n], Y[m, n])
             R = Z[m, n]*I - A
             (U, S, V) = np.linalg.svd(R)
-            smin[m][n] = np.min(S)**-1
+            smin[m][n] = np.min(S)
+    
+    if invert:
+        smin = smin**-1
     
     return (X, Y, Z, smin)
 
@@ -37,9 +40,9 @@ def plot_pseudospectra(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True
         fig = plt.gcf()
         fig.colorbar(res)
 
-def plot_pseudospectra_contour(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=True, levels=None):
+def plot_pseudospectra_contour(A, bounds=[-1, 1, -1, 1], npts=50, ax=None, colorbar=True, log=True, levels=None, invert=False):
     
-    (X, Y, Z, smin) = compute_pseudospectra(A, bounds, npts)
+    (X, Y, Z, smin) = compute_pseudospectra(A, bounds, npts, invert=invert)
     
     fig = plt.gcf()    
     if ax is None:        

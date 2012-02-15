@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from prorn.network import EchoStateNetwork
+from prorn.sim import run_sim
 
 try:
     import mayavi.mlab as mlab
@@ -21,46 +23,43 @@ from prorn.config import *
 from prorn.info import fisher_memory_matrix
 from prorn.stim import StimPrototype, stim_pca
 from prorn.readout import get_samples
-from prorn.spectra import plot_pseudospectra, plot_pseudospectra_contour
+from prorn.spectra import plot_pseudospectra, plot_pseudospectra_contour,\
+    compute_pseudospectra
 from prorn.analysis import top100_weight_pca, get_top_perfs
-from prorn.morse import MorseStimSet
 
-def plot_trajectory(net_file, stim_file, net_key, exp_name, stim_key=None, stim_index=None, trial=None):
-    
-    if not ((stim_key is None) ^ (stim_index is None)):
-        print '[plot_trajectory] Either stim_key or stim_index must be supplied!'
-        return
-    
-    f = h5py.File(net_file, 'r')
-    resp_grp = f[net_key][exp_name]['responses']
-    if stim_key is None:
-        stim_keys = resp_grp.keys()    
-        stim_key = stim_keys[stim_index]
+def plot_trajectory(perf_data, stimset, stim_class, symbols):
         
-    stim_grp = resp_grp[stim_key]
-    stim_start = int(stim_grp.attrs['stim_start'])
-    stim_end = int(stim_grp.attrs['stim_end'])
-    resps = np.array(stim_grp['responses'])
-    f.close()
-    
-    if trial is None:
-        avg_resp = resps.mean(axis=0).squeeze()
-    else:
-        avg_resp = resps[trial, :, :].squeeze()
-    
-    stimset = MorseStimSet()
-    stimset.from_hdf5(stim_file)    
-    stim = stimset.all_stims[stim_key]
-    stimsym = stimset.md5_to_symbol[stim_key]
-    stim_str = '%s:%s' % (stimsym, ''.join(['%d' % s for s in stim]))
-
-    t = np.arange(0, avg_resp.shape[0])
-    
+    net = perf_data.net
+    net.noise_std = 0.0
+        
+        
     mlab.figure(bgcolor=(0.5, 0.5, 0.5), fgcolor=(0.0, 0.0, 0.0))
-    traj = mlab.plot3d(avg_resp[:, 0], avg_resp[:, 1], avg_resp[:, 2], t, colormap='hot', tube_radius=None)
-    mlab.points3d(avg_resp[stim_start, 0], avg_resp[stim_start, 1], avg_resp[stim_start, 2], scale_factor=0.050)
-    mlab.points3d(avg_resp[stim_end, 0], avg_resp[stim_end, 1], avg_resp[stim_end, 2], scale_factor=0.050)
-    mlab.title(stim_str)
+    for symbol in symbols:
+        stim_md5 = stimset.symbol_to_md5[symbol][0]
+        stim = stimset.all_stims[stim_md5]
+        net_sims = run_sim(net, {stim_md5:stim},
+                           burn_time=100,
+                           pre_stim_time = 1,
+                           post_stim_time=25,
+                           num_trials=1)
+        
+        sim = net_sims[stim_md5]
+        avg_resp = sim.responses[0, :, :].squeeze()
+        stim_start = 0
+        stim_end = len(stim) + 1
+        
+        stimsym = stimset.md5_to_symbol[stim_md5]
+        stim_str = '%s:%s (%0.2f)' % (stimsym, ''.join(['%d' % s for s in stim]), perf_data.logit_perf)
+    
+        t = np.arange(0, stim_end)
+        traj = mlab.plot3d(avg_resp[0:stim_end, 0], avg_resp[0:stim_end, 1], avg_resp[0:stim_end, 2], t,
+                           colormap='hot', tube_radius=None)
+        #mlab.points3d(avg_resp[stim_start, 0], avg_resp[stim_start, 1], avg_resp[stim_start, 2], scale_factor=0.300)
+        mlab.points3d(avg_resp[stim_end-1, 0], avg_resp[stim_end-1, 1], avg_resp[stim_end-1, 2], scale_factor=0.900)
+    
+    #mlab.colorbar()
+    #mlab.title(stim_str)
+    mlab.title('%0.2f' % perf_data.logit_perf)
     
 
 def plot_prototypes(prototypes, noise_mean=0.0, noise_std=0.15):
@@ -451,7 +450,7 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, lev
             N = W.shape[0]
             ax = fig.add_subplot(perrow, percol, k)
             if contour:
-                plot_pseudospectra_contour(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, log=False, levels=levels)
+                plot_pseudospectra_contour(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, invert=False, log=False, levels=levels)
             else:
                 plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=True, log=True)
             plt.axhline(0.0, color='k', axes=ax)
@@ -463,15 +462,102 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, lev
             plt.xticks([], [])
             plt.yticks([], [])
             
-            p = pdata[offset + k]
-            for m in range(N):
-                ev = p.eigen_values[m]
-                ax.plot(ev.real, ev.imag, 'ko', markerfacecolor='w')
+            if not contour:
+                p = pdata[offset + k]
+                for m in range(N):
+                    ev = p.eigen_values[m]
+                    ax.plot(ev.real, ev.imag, 'ko', markerfacecolor='w')
         if offset == 0:
             plt.suptitle('Pseudospectra of Top %d Networks' % num_plots)
         else:
             plt.suptitle('Pseudospectra of Bottom %d Networks' % num_plots)
             
+    plt.show()
+
+def plot_smin_hist_by_perf(pdata, tau=1):
+    
+    num_plots = 9
+    
+    indx_off = [0, len(pdata)-num_plots]
+    weights = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            weights[k].append(p.W)        
+            
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            N = W.shape[0]
+            ax = fig.add_subplot(perrow, percol, k)
+            (X, Y, Z, smin) = compute_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, invert=False)
+            
+            a = np.real(Z)
+            K = smin / a
+            eatau = np.exp(a*tau) 
+            maxg = eatau / (1.0 + ((eatau - 1.0) / K))
+
+            ax.hist(maxg[(a > 0) * (K > 1)].ravel(), bins=20)
+            #ax.hist(smin.ravel(), bins=20)
+            
+    plt.show()
+    
+
+def plot_lower_bound_perf(pdata, tau=1, indicies=None):
+    
+    
+    if indicies is None:
+        indicies = range(len(pdata))
+    
+    lb = []
+    perfs = []
+    
+    for k in indicies:
+        p = pdata[k]    
+        W = p.W
+        (X, Y, Z, smin) = compute_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, invert=True)
+        
+        a = np.real(Z)
+        K = smin / a
+        eatau = np.exp(a*tau) 
+        maxg = eatau / (1.0 + ((eatau - 1.0) / K))
+        
+        lb.append(maxg[(a > 0) * (K > 1)].ravel().mean())
+        perfs.append(p.logit_perf)
+            
+    plt.plot(lb, perfs, 'go')    
+    plt.show()    
+
+    
+def plot_abscissa_eps_by_perf(pdata, perf_attr='logit_perf', eps=0.5, indicies=None, mean=False, abs=False, right_half_only=False):
+        
+    if indicies is None:
+        indicies = range(len(pdata))
+    perfs = []
+    abscissas = []
+    for k in indicies:
+        p = pdata[k]
+        (X, Y, Z, smin) = compute_pseudospectra(p.W, bounds=[-3, 3, -3, 3], npts=50, invert=False)
+        zvals = Z[smin < eps]
+        if zvals.shape[0] > 0:
+            zreal = np.array([a.real for a in zvals])
+            if right_half_only:
+                zreal = zreal[zreal > 0]
+            if abs:
+                zreal = np.abs(zreal)
+            if len(zreal) > 0:
+                if mean:
+                    abscissas.append(zreal.mean())
+                else:
+                    abscissas.append(zreal.max())
+                perfs.append(p.logit_perf)    
+    
+    plt.plot(abscissas, perfs, 'bo')
     plt.show()
 
     
@@ -578,6 +664,83 @@ def plot_schur_by_perf(pdata, perf_attr='logit_perf', show_unitary=False):
             
     plt.show()
     
+    
+def plot_input_by_schur(pdata, perf_attr='logit_perf', weight_transform=False):
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    weights = [[], []]
+    win = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            weights[k].append(p.W)
+            win[k].append(p.Win)
+            
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            Win = win[j][k].reshape(W.shape[0], 1)
+            (T, Z) = scipy.linalg.schur(W, 'complex')
+                        
+            c = np.matrix(Z.conjugate()) * Win
+            if weight_transform:
+                c = np.matrix(T) * c
+
+            xy = np.array([(z.real, z.imag) for z in np.array(c).squeeze()])
+            
+            num_real = len( (xy[:, 1] == 0).nonzero()[0] )
+            
+            maxval = (np.abs(xy).max())*1.1
+            
+            ax = fig.add_subplot(perrow, percol, k)
+            ax.plot(xy[:, 0], xy[:, 1], 'ro')            
+            ax.set_title('%d' % num_real)
+            plt.axhline(0.0, color='k', axes=ax)
+            plt.axvline(0.0, color='k', axes=ax)
+            
+            cir = pylab.Circle((0.0, 0.0), radius=1.00,  fc='gray', fill=False)
+            pylab.gca().add_patch(cir)            
+                        
+            plt.xticks([], [])
+            plt.yticks([], [])
+            plt.axis([-maxval, maxval, -maxval, maxval])
+            
+            p = pdata[offset + k]
+            
+        if offset == 0:
+            plt.suptitle('Schur-projected Input of Top %d Networks' % num_plots)
+        else:
+            plt.suptitle('Schur-projected Input of Bottom %d Networks' % num_plots)
+            
+    plt.show()
+
+def plot_input_by_schur_nreal(pdata):
+    
+    nreal = []
+    perf = []
+    for m,p in enumerate(pdata):        
+        W = p.W
+        Win = p.Win.reshape([W.shape[0], 1])
+        (T, Z) = scipy.linalg.schur(W, 'complex')
+                        
+        c = np.matrix(Z.conjugate()) * Win                         
+        xy = np.array([(z.real, z.imag) for z in np.array(c).squeeze()])
+        
+        num_real = len( (xy[:, 1] == 0).nonzero()[0] )
+        nreal.append(num_real)
+        perf.append(p.logit_perf)
+    
+    plt.plot(nreal, perf, 'go')
+    plt.title('# of real valued projects vs performance')            
+    plt.show()
+    
 def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
     
     num_plots = 25
@@ -680,6 +843,43 @@ def plot_perf_by_jtot(pdata, perf_attr='logit_perf'):
     plt.xlabel('Jtot')
     plt.ylabel('Performance')
     plt.show()
+    
+def plot_perf_by_eigsum(pdata, perf_attr='logit_perf'):
+    
+    perfs = []
+    eigsum = []
+    for m,p in enumerate(pdata):
+        eigsum.append(np.abs(p.eigen_values).sum())
+        perfs.append(p.logit_perf)
+            
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(eigsum, perfs, 'ko')
+    ax.set_title('Eigsum vs Performance')
+    plt.xlabel('Eigsum')
+    plt.ylabel('Performance')
+    plt.show()
+    
+def plot_perf_by_abscissa(pdata, perf_attr='logit_perf', mean=False):
+    
+    perfs = []
+    aval = []
+    for m,p in enumerate(pdata):
+        rv = np.array([l.real for l in p.eigen_values])
+        if not mean:
+            aval.append(rv.max())
+        else:
+            aval.append(rv.mean())            
+        perfs.append(p.logit_perf)
+            
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(aval, perfs, 'ko')
+    ax.set_title('Abscissa vs Performance')
+    plt.xlabel('Abscissa')
+    plt.ylabel('Performance')
+    plt.show()
+    
 
 def plot_perf_by_jsum(pdata, perf_attr='logit_perf'):
     
