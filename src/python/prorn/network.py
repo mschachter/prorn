@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import networkx as nx
 
@@ -16,6 +18,7 @@ class EchoStateNetwork:
         self.index2node = []
         self.input_node2index = {}
         self.input_index2node = []
+        self.output_nl = None
         
         self.t = 0
         self.W = None #weight matrix
@@ -166,7 +169,17 @@ class EchoStateNetwork:
                     self.Win[node_index, input_index] = self.graph[n1][n2]['weight']
         
         self.compiled = True
+    
+    def get_in_degrees(self):
+        in_degrees = []
         
+        for n in self.graph.nodes():
+            if not 'is_input' in self.graph.node[n]:
+                in_degrees.append(self.graph.in_degree([n])[n])
+        
+        return np.array(in_degrees)
+        
+    
     def step(self):
         """ Run a network through a single time step """
         
@@ -181,14 +194,49 @@ class EchoStateNetwork:
             input = self.input_stream.next()
             if input is not None:
                 #compute weighted input for each node                
-                i_input = np.dot(self.Win, input).squeeze()                
+                i_input = np.dot(self.Win, input).squeeze()
                 
         #compute weighted input for each node
         i_internal = np.dot(self.W, self.x)
         i_noise = 0.0
         if self.noise_std > 0.0:
             i_noise = np.random.randn(N)*self.noise_std
-        self.x = i_input + i_internal + i_noise
+        xnew = i_input + i_internal + i_noise
+        if self.output_nl is not None:
+            xnew = self.output_nl.evaluate(xnew)
+        self.x = xnew
         self.t += 1
-        
     
+
+class OutputNL():
+    
+    def __init__(self, net=None):
+        self.net = net
+    
+    def evaluate(self, x):
+        return x
+    
+class ThresholdOutputNL(OutputNL):
+    
+    def __init__(self, net, threshold=0.75):
+        OutputNL.__init__(self)
+        self.in_degrees = net.get_in_degrees()
+        self.threshold = threshold
+        
+    def evaluate(self, x):
+        y = copy.copy(x)
+        y /= self.in_degrees
+        y[x < self.threshold] = 0.0
+        y[x >= self.threshold] = 1.0
+        
+        return y
+    
+class TanhOutputNL(OutputNL):
+    
+    def __init__(self, net):
+        OutputNL.__init__(self, net)
+        self.in_degrees = net.get_in_degrees()
+        
+    def evaluate(self, x):
+        return np.tanh(x)
+       

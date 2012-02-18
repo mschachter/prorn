@@ -31,7 +31,7 @@ def create_inputless_net():
     return net
 
 def create_fullyconnected_net(num_nodes, rescale_frac=0.999, noise_std=0.0, random_initial_state=False,
-                              symmetric=False, feedforward=False):
+                              symmetric=False, feedforward=False, connection_rate=1.0):
     
     net = EchoStateNetwork()
     net.noise_std = noise_std
@@ -56,7 +56,9 @@ def create_fullyconnected_net(num_nodes, rescale_frac=0.999, noise_std=0.0, rand
     
     for k1 in range(num_nodes):
         for k2 in range(num_nodes):
-            net.connect_nodes(k1, k2, W[k1, k2])
+            rn = np.random.rand()
+            if rn < connection_rate:
+                net.connect_nodes(k1, k2, W[k1, k2])
     
     net.rescale_weights(rescale_frac)
     
@@ -140,7 +142,8 @@ def run_morse_nets(stim_file, net_file, input_gain=1.0, noise_std=0.0, num_trial
 def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
                           num_nodes=3, input_gain=1.0, noise_std=0.0, fixed_seed=None,
                           stim_class='standard', num_nets=10, output_file=None,
-                          symmetric=False, feedforward=False):
+                          symmetric=False, feedforward=False, connection_rate=1.0,
+                          output_nl_type=None, output_nl_args=None):
     
     stimset = MorseStimSet()
     stimset.from_hdf5(stim_file)
@@ -169,10 +172,14 @@ def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
         net = create_fullyconnected_net(num_nodes=num_nodes, symmetric=symmetric,
                                         feedforward=feedforward)        
         net.noise_std = noise_std
+        if output_nl_type is not None:
+            output_nl = output_nl_type(net, **output_nl_args)
+            net.output_nl = output_nl
         
         #try out each input node, see which one works best
         best_performance = -np.Inf
         best_input_node = 0
+        best_sims = None
 
         for input_node in range(num_nodes):
             if feedforward and input_node != 0:
@@ -189,15 +196,22 @@ def run_morse_nets_online(stim_file, num_trials=20, stack_size=5,
             
             all_samps = {}
             for md5,sim in net_sims.iteritems():
-                all_samps[md5] = sim.responses[:, 0, :].squeeze()
+                all_samps[md5] = sim.responses[:, 0, :].squeeze()                
             
             percent_correct = train_readout_mnlogit(stimset, all_samps)
             if percent_correct > best_performance:
                 best_performance = percent_correct
                 best_input_node = input_node
                 best_net = net_copy
+                best_sims = net_sims
                 
         print 'Net %d (input=%d) got %0.2f correct' % (k, best_input_node, best_performance)
+        """
+        for md5,sim in best_sims.iteritems():
+            sp = (sim.responses[:, 0, :].squeeze()).sum(axis=0) / float(len(all_samps[md5]))
+            spstr = ['%d' % f for f in sp] 
+            print '%s,%s' % (''.join(spstr), stimset.md5_to_symbol[md5])
+        """
         
         min_perf = net_performances.min()
         if min_perf < best_performance:
