@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from prorn.network import EchoStateNetwork
 from prorn.sim import run_sim
+from prorn.convexhull import convex_hull
 
 try:
     import mayavi.mlab as mlab
@@ -473,6 +474,53 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, lev
             plt.suptitle('Pseudospectra of Bottom %d Networks' % num_plots)
             
     plt.show()
+
+def plot_pseudospectra_hull_perf(pdata, perf_attr='logit_perf', eps=0.5, bounds=[-3, 3, -3, 3], npts=50):
+    
+    num_plots = 25
+    
+    indx_off = [0, len(pdata)-num_plots]
+    weights = [[], []]
+    for k,offset in enumerate(indx_off):
+        pend = offset + num_plots
+        for m,p in enumerate(pdata[offset:pend]):
+            weights[k].append(p.W)        
+            
+    perrow = int(np.sqrt(num_plots))
+    percol = perrow
+    
+    for j,offset in enumerate(indx_off):
+        fig = plt.figure()
+        fig.subplots_adjust(wspace=0.1, hspace=0.1)    
+        for k in range(num_plots):
+            W = weights[j][k]
+            N = W.shape[0]
+            
+            (X, Y, Z, smin) = compute_pseudospectra(W, bounds=bounds, npts=npts, invert=False)
+            if np.sum(smin < eps) > 0:
+                xvals = X[smin < eps].ravel()
+                yvals = Y[smin < eps].ravel()
+                pnts = zip(xvals, yvals)
+                ch = np.array(convex_hull(pnts))
+                arclen = 0.0
+                for m in range(ch.shape[0]):
+                    if m == 0:
+                        p1 = ch[-1, :]
+                    else:
+                        p1 = ch[m-1, :]
+                    p2 = ch[m, :]
+                    arclen += np.linalg.norm(p2 - p1)
+                    
+                ax = fig.add_subplot(perrow, percol, k)
+                ax.fill(ch[:, 0], ch[:, 1], 'b')
+                ax.set_xlim((bounds[0], bounds[1]))
+                ax.set_ylim((bounds[2], bounds[3]))
+                ax.set_title('%0.1f' % arclen)
+                            
+    plt.show()
+
+
+
 
 def plot_smin_hist_by_perf(pdata, tau=1):
     

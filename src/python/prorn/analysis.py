@@ -9,6 +9,7 @@ import h5py
 from prorn.readout import train_readout_nn
 from prorn.info import entropy_ratio, mutual_information
 from prorn.network import EchoStateNetwork
+from prorn.sim import run_sim
 
 class PerformanceData:
     def __init__(self):
@@ -127,3 +128,33 @@ def get_top_perfs(top_file):
     perfs.sort(key=operator.attrgetter('logit_perf'), reverse=True)
     
     return perfs
+
+def compute_state_rank(perf_data, stimset, stim_class, svd_eps=1e-10):
+    net = perf_data.net
+    net.noise_std = 0.0
+    
+    states = []
+    
+    for md5 in stimset.class_to_md5[stim_class]:
+        stim = stimset.all_stims[md5]
+        net_sims = run_sim(net, {md5:stim},
+                           burn_time=100,
+                           pre_stim_time = -1,
+                           post_stim_time=1,
+                           num_trials=1)
+        
+        sim = net_sims[md5]
+        avg_resp = sim.responses[0, :, :].squeeze()
+        states.append(avg_resp)
+    
+    #X = np.transpose(np.array(states))
+    X = np.array(states)
+    (U, S, V) = np.linalg.svd(X)
+    print S
+    rank = np.sum(S > svd_eps)
+    
+    return rank
+    
+    
+    
+    
