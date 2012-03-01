@@ -13,10 +13,12 @@ from prorn.network import EchoStateNetwork
 from prorn.sim import run_sim
 from prorn.convexhull import convex_hull
 
+"""
 try:
     import mayavi.mlab as mlab
 except:
     import enthought.mayavi.mlab as mlab
+"""
 
 import h5py
 

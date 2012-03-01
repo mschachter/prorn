@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.stats import gaussian_kde
 
+from pydare import dlyap
+
 from prorn.readout import get_samples
 
 class NDHistogram():
@@ -116,18 +118,28 @@ def entropy(samps, nbins=350):
     return -H
 
 
-def fisher_memory_matrix(W, v, npts = 15):
+def fisher_memory_matrix(W, v, npts = 15, use_dlyap=False):
     
     J = np.zeros([npts, npts])    
-    Cn = gaussian_covariance_matrix(W)
+    if use_dlyap:
+        Cn = dlyap(W, np.eye(W.shape[0]))
+    else:
+        Cn = gaussian_covariance_matrix(W)
+    
+    v = v.reshape([W.shape[0], 1])
     Cninv = np.linalg.inv(Cn)
     Wmat = np.matrix(W)
     for k in range(npts):
         for j in range(npts):
-            v1 = np.dot(Wmat**j, v)
-            v2 = np.dot(Cninv, np.transpose(v1))            
-            v3 = np.dot(np.transpose(Wmat**k), v2)
-            J[k, j] = np.dot(v, v3)
+            v1 = Wmat**j * v
+            #print 'v1.shape,',v1.shape
+            v2 = Cninv * v1
+            #print 'v2.shape,',v2.shape            
+            v3 = np.transpose(Wmat**k) * v2
+            #print 'v3.shape,',v3.shape
+            v4 = np.transpose(v) * v3
+            #print 'v4.shape,',v4.shape
+            J[k, j] = np.array(v4).squeeze()
     return J
 
 
@@ -136,7 +148,7 @@ def gaussian_covariance_matrix(W, niters=100):
     Wmat = np.matrix(W)
     for k in range(niters):
         Wk = Wmat**k
-        sum += np.dot(Wk, np.transpose(Wk))
+        sum += Wk*np.transpose(Wk)
     return sum
     
     
