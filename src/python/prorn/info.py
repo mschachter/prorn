@@ -131,11 +131,11 @@ def fisher_memory_matrix(W, v, npts = 15, use_dlyap=False):
     Wmat = np.matrix(W)
     for k in range(npts):
         for j in range(npts):
-            v1 = Wmat**j * v
+            v1 = Wmat**(j+1) * v
             #print 'v1.shape,',v1.shape
             v2 = Cninv * v1
             #print 'v2.shape,',v2.shape            
-            v3 = np.transpose(Wmat**k) * v2
+            v3 = np.transpose(Wmat**(k+1)) * v2            
             #print 'v3.shape,',v3.shape
             v4 = np.transpose(v) * v3
             #print 'v4.shape,',v4.shape
@@ -143,7 +143,7 @@ def fisher_memory_matrix(W, v, npts = 15, use_dlyap=False):
     return J
 
 
-def gaussian_covariance_matrix(W, niters=100):    
+def gaussian_covariance_matrix(W, niters=1000):    
     sum = 0.0
     Wmat = np.matrix(W)
     for k in range(niters):

@@ -3,13 +3,16 @@ import csv
 import operator
 
 import numpy as np
+import scipy
 
 import h5py
 
 from prorn.readout import train_readout_nn
-from prorn.info import entropy_ratio, mutual_information
+from prorn.info import entropy_ratio, mutual_information, fisher_memory_matrix
 from prorn.network import EchoStateNetwork
 from prorn.sim import run_sim
+from prorn.spectra import compute_pseudospectra
+from prorn.convexhull import convex_hull
 
 class PerformanceData:
     def __init__(self):
@@ -154,7 +157,84 @@ def compute_state_rank(perf_data, stimset, stim_class, svd_eps=1e-10):
     rank = np.sum(S > svd_eps)
     
     return rank
+
+def compute_net_metrics(pdata, output_file):
     
+    npts = 40
     
+    data = []
     
+    for p in pdata:
+        J = fisher_memory_matrix(p.net.W, p.net.Win, use_dlyap=False, npts=npts)
+        
+        feature_names = []
+        features = []
+        
+        #compute weighted jtot
+        fmc = np.diag(J)
+        fmc[fmc < 0.0] = 0.0
+        indx = np.arange(len(fmc)) + 1.0
+        w = np.log2(indx)
+        wjtot = (w * fmc).sum()
+        feature_names.append('wjtot')
+        features.append(wjtot)
+        
+        #compute upper-triangular abs sum
+        jt_vals = np.abs(J[np.triu_indices(len(J))]) 
+        fmm_sum = jt_vals.sum()
+        feature_names.append('fmm_sum')
+        features.append(fmm_sum)
+        
+        #compute arc length of convex hull around pseudospectra
+        bounds=[-3, 3, -3, 3]
+        for eps in [0.5, 0.1]:
+            (X, Y, Z, smin) = compute_pseudospectra(p.net.W, bounds=bounds, npts=75, invert=False)
+            arclen = np.NAN
+            if np.sum(smin < eps) > 0:
+                arclen = 0.0                
+                xvals = X[smin < eps].ravel()
+                yvals = Y[smin < eps].ravel()
+                pnts = zip(xvals, yvals)
+                ch = np.array(convex_hull(pnts))
+                
+                for m in range(ch.shape[0]):
+                    if m == 0:
+                        p1 = ch[-1, :]
+                    else:
+                        p1 = ch[m-1, :]
+                    p2 = ch[m, :]
+                    arclen += np.linalg.norm(p2 - p1)
+            feature_names.append('arclen_%0.2f' % eps)
+            features.append(arclen)
+        
+        #compute eigenvalues/schur decomposition
+        (T, U, sdim) = scipy.linalg.schur(p.net.W, 'complex', sort='rhp')
+        
+        evals = np.diag(T)
+        for k,ev in enumerate(evals):
+            feature_names.append('ev%d_real' % k)
+            features.append(ev.real)
+            feature_names.append('ev%d_imag' % k)
+            features.append(ev.imag)
+        
+        for i in range(p.net.W.shape[0]):
+            for j in range(i):
+                if i != j:
+                    od = T[j, i]
+                    feature_names.append('od%d%d_real' % (j, i))
+                    features.append(od.real)
+                    feature_names.append('od%d%d_imag' % (j, i))
+                    features.append(od.imag)
+        
+        feature_names.append('perf')
+        features.append(p.logit_perf)
+        
+        data.append(features)
     
+    f = open(output_file, 'w')
+    f.write('%s\n' % ','.join(feature_names))
+    for row in data:
+        fstr = ['%0.12f' % x for x in row]
+        f.write('%s\n' % ','.join(fstr))
+    f.close()
+        

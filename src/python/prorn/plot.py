@@ -13,12 +13,10 @@ from prorn.network import EchoStateNetwork
 from prorn.sim import run_sim
 from prorn.convexhull import convex_hull
 
-"""
 try:
     import mayavi.mlab as mlab
 except:
     import enthought.mayavi.mlab as mlab
-"""
 
 import h5py
 
@@ -30,7 +28,7 @@ from prorn.spectra import plot_pseudospectra, plot_pseudospectra_contour,\
     compute_pseudospectra
 from prorn.analysis import top100_weight_pca, get_top_perfs
 
-def plot_trajectory(perf_data, stimset, stim_class, symbols):
+def plot_trajectory(perf_data, stimset, stim_class, symbols, post_stim_time=1):
         
     net = perf_data.net
     net.noise_std = 0.0
@@ -43,26 +41,29 @@ def plot_trajectory(perf_data, stimset, stim_class, symbols):
         net_sims = run_sim(net, {stim_md5:stim},
                            burn_time=100,
                            pre_stim_time = 1,
-                           post_stim_time=25,
+                           post_stim_time=max(25, post_stim_time),
                            num_trials=1)
         
         sim = net_sims[stim_md5]
         avg_resp = sim.responses[0, :, :].squeeze()
         stim_start = 0
-        stim_end = len(stim) + 1
+        record_time = len(stim) + 1
+        stim_end = len(stim) + post_stim_time
         
         stimsym = stimset.md5_to_symbol[stim_md5]
-        stim_str = '%s:%s (%0.2f)' % (stimsym, ''.join(['%d' % s for s in stim]), perf_data.logit_perf)
+        #stim_str = '%s:%s (%0.2f)' % (stimsym, ''.join(['%d' % s for s in stim]), perf_data.logit_perf)
+        stim_str = '%s:%s' % (stimsym, ''.join(['%d' % s for s in stim]))
     
         t = np.arange(0, stim_end)
         traj = mlab.plot3d(avg_resp[0:stim_end, 0], avg_resp[0:stim_end, 1], avg_resp[0:stim_end, 2], t,
                            colormap='hot', tube_radius=None)
         #mlab.points3d(avg_resp[stim_start, 0], avg_resp[stim_start, 1], avg_resp[stim_start, 2], scale_factor=0.300)
-        mlab.points3d(avg_resp[stim_end-1, 0], avg_resp[stim_end-1, 1], avg_resp[stim_end-1, 2], scale_factor=0.900)
+        mlab.points3d(avg_resp[record_time-1, 0], avg_resp[record_time-1, 1], avg_resp[record_time-1, 2], scale_factor=0.900)
     
-    #mlab.colorbar()
-    #mlab.title(stim_str)
-    mlab.title('%0.2f' % perf_data.logit_perf)
+    mlab.colorbar()
+    if len(symbols) == 1:
+        mlab.title(stim_str)
+    #mlab.title('%0.2f' % perf_data.logit_perf)
     
 
 def plot_prototypes(prototypes, noise_mean=0.0, noise_std=0.15):
@@ -431,7 +432,34 @@ def plot_stim_pca(stim_file):
         
     plt.show()
 
-def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, levels=None):
+def plot_pseudospectra_single(perf_data, contour=False, levels=False, invert=True, linewidth=3.0):
+    
+    W = perf_data.net.W
+    N = W.shape[0]
+    
+    plt.figure()
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1)
+    if contour:
+        plot_pseudospectra_contour(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, invert=False, log=False, levels=levels, linewidth=linewidth)
+    else:
+        plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=True, log=True, invert=invert)
+    plt.axhline(0.0, color='k', axes=ax)
+    plt.axvline(0.0, color='k', axes=ax)
+    
+    cir = pylab.Circle((0.0, 0.0), radius=1.00,  fc='gray', fill=False)
+    pylab.gca().add_patch(cir)
+    
+    plt.xticks([], [])
+    plt.yticks([], [])
+    
+    if not contour:
+        for m in range(N):
+            ev = perf_data.eigen_values[m]
+            ax.plot(ev.real, ev.imag, 'ko', markerfacecolor='w')
+    
+
+def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, levels=None, invert=True):
     
     num_plots = 25
     
@@ -455,7 +483,7 @@ def plot_pseudospectra_by_perf(pdata, perf_attr='logit_perf', contour=False, lev
             if contour:
                 plot_pseudospectra_contour(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=False, invert=False, log=False, levels=levels)
             else:
-                plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=True, log=True)
+                plot_pseudospectra(W, bounds=[-3, 3, -3, 3], npts=50, ax=ax, colorbar=True, log=True, invert=invert)
             plt.axhline(0.0, color='k', axes=ax)
             plt.axvline(0.0, color='k', axes=ax)
             
@@ -520,9 +548,6 @@ def plot_pseudospectra_hull_perf(pdata, perf_attr='logit_perf', eps=0.5, bounds=
                 ax.set_title('%0.1f' % arclen)
                             
     plt.show()
-
-
-
 
 def plot_smin_hist_by_perf(pdata, tau=1):
     
@@ -665,15 +690,32 @@ def plot_commutivity(pdata, perf_attr='logit_perf'):
     ax.hist(bottom_cdiff, bins=20)
     ax.set_title('Commutivity Differences: Bottom 25')
         
+
+
+def plot_schur_single(W, sort_str='rhp'):
+    
+    (T, U, sdim) = scipy.linalg.schur(W, 'complex', sort=sort_str)
+    plt.figure()
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1)
+    res = ax.imshow(np.abs(T), interpolation='nearest', cmap=cm.jet)
+    fig.colorbar(res)
+    #ax.set_title('%0.2f' % comm[j][k])            
+    plt.xticks([], [])
+    plt.yticks([], [])
     
 
-def plot_schur_by_perf(pdata, perf_attr='logit_perf', show_unitary=False):
+def plot_schur_by_perf(pdata, perf_attr='logit_perf', show_unitary=False, vbounds=None, sort_str='rhp'):
     
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
     weights = [[], []]
     comm = [[], []]
+    min_val = np.Inf
+    max_val = -np.Inf
+    schur_T = [[], []]
+    schur_U = [[], []]
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
@@ -684,6 +726,14 @@ def plot_schur_by_perf(pdata, perf_attr='logit_perf', show_unitary=False):
             c2 = Wt*W
             cdiff = (c1 - c2).sum()
             comm[k].append(cdiff)
+            if sort_str is None:
+                (T, U) = scipy.linalg.schur(W, 'complex')
+            else:
+                (T, U, sdim) = scipy.linalg.schur(W, 'complex', sort=sort_str)
+            schur_T[k].append(T)
+            schur_U[k].append(U)
+            min_val = min(np.abs(T).min(), min_val)
+            max_val = max(np.abs(T).max(), max_val)
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -693,15 +743,20 @@ def plot_schur_by_perf(pdata, perf_attr='logit_perf', show_unitary=False):
         fig.subplots_adjust(wspace=0.1, hspace=0.1)    
         for k in range(num_plots):
             W = weights[j][k]
-            (T, Z) = scipy.linalg.schur(W, 'complex')
+            T = schur_T[j][k]
+            U = schur_U[j][k]
             if show_unitary:
-                M = np.abs(np.transpose(Z))
+                M = np.abs(np.transpose(U))
             else:
                 M = np.abs(T)
             
+            if vbounds is None:
+                vbounds = [min_val, max_val]
+            
             ax = fig.add_subplot(perrow, percol, k)
-            ax.imshow(M, interpolation='nearest', vmin=-1.0, vmax=1.0, cmap=cm.jet)
-            ax.set_title('%0.2f' % comm[j][k])            
+            res = ax.imshow(M, interpolation='nearest', vmin=vbounds[0], vmax=vbounds[1], cmap=cm.jet)
+            fig.colorbar(res)
+            #ax.set_title('%0.2f' % comm[j][k])            
             plt.xticks([], [])
             plt.yticks([], [])
             
@@ -791,20 +846,49 @@ def plot_input_by_schur_nreal(pdata):
     plt.title('# of real valued projects vs performance')            
     plt.show()
     
-def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
+def plot_fmm_single(perf_data, npts=50):
     
-    num_plots = 25
+    J = fisher_memory_matrix(perf_data.net.W, perf_data.net.Win, npts=npts, use_dlyap=False)
+    plt.figure()
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1)
+    res = ax.imshow(J, interpolation='nearest', cmap=cm.jet)
+    fig.colorbar(res)
+    ax.set_xlabel('Timestep')
+    ax.set_ylabel('Timestep')
+    #plt.xticks([], [])
+    #plt.yticks([], [])
+    
+    fmc = np.diag(J)
+    fmc[fmc < 0.0] = 0.0
+    t = np.arange(len(fmc))
+    plt.figure()
+    plt.plot(t, fmc, 'k-', linewidth=3.0)
+    ax.set_xlabel('Timestep')
+    ax.set_ylabel('Memory')
+    plt.axis('tight')
+    
+def plot_fmm_by_perf(pdata, perf_attr='logit_perf', use_dlyap=False, npts=15, num_plots=25, vbounds=None):
+    
+    num_plots = num_plots
     
     indx_off = [0, len(pdata)-num_plots]
     weights = [[], []]
     inputs = [[], []]
     perfs = [[], []] 
+    fmms = [[], []]
+    max_fmm = -np.Inf    
+    min_fmm = np.Inf
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
             weights[k].append(p.W)
             inputs[k].append(p.Win)
             perfs[k].append(p.logit_perf)
+            J = fisher_memory_matrix(p.net.W, p.net.Win, npts=npts, use_dlyap=use_dlyap)
+            fmms[k].append(J)
+            max_fmm = max(max_fmm, J.max())
+            min_fmm = min(min_fmm, J.min())            
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -812,14 +896,14 @@ def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
     for j,offset in enumerate(indx_off):
         fig = plt.figure()
         fig.subplots_adjust(wspace=0.1, hspace=0.1)    
-        for k in range(num_plots):
-            W = weights[j][k]
-            v = inputs[j][k]
-            J = fisher_memory_matrix(W, v, npts=15)
-            Jlog = np.log(J+1.0)
+        for k in range(num_plots):            
+            J = fmms[j][k]
             
+            if vbounds is None:
+                vbounds = [min_fmm, max_fmm]
             ax = fig.add_subplot(perrow, percol, k)
-            ax.imshow(J, interpolation='nearest', cmap=cm.jet)
+            res = ax.imshow(J, interpolation='nearest', cmap=cm.jet, vmin=vbounds[0], vmax=vbounds[1])
+            #fig.colorbar(res)
             #ax.set_title('%0.2f' % perfs[j][k])            
             plt.xticks([], [])
             plt.yticks([], [])
@@ -833,18 +917,25 @@ def plot_fmm_by_perf(pdata, perf_attr='logit_perf'):
             
     plt.show()    
 
-def plot_fmc_by_perf(pdata, perf_attr='logit_perf'):
+def plot_fmc_by_perf(pdata, perf_attr='logit_perf', use_dlyap=False, npts=15, weight=False, vmax=None):
     
     num_plots = 25
     
     indx_off = [0, len(pdata)-num_plots]
     weights = [[], []]
     inputs = [[], []]
+    fmcs = [[], []]
+    fmc_max = -np.Inf
     for k,offset in enumerate(indx_off):
         pend = offset + num_plots
         for m,p in enumerate(pdata[offset:pend]):
-            weights[k].append(p.W)
-            inputs[k].append(p.Win)            
+            weights[k].append(p.net.W)
+            inputs[k].append(p.net.Win)
+            J = fisher_memory_matrix(p.net.W, p.net.Win, use_dlyap=use_dlyap, npts=npts)
+            fmc = np.diag(J)
+            fmc[fmc < 0.0] = 0.0
+            fmcs[k].append(fmc)
+            fmc_max = max(fmc_max, fmc.max())
     
     perrow = int(np.sqrt(num_plots))
     percol = perrow
@@ -855,13 +946,22 @@ def plot_fmc_by_perf(pdata, perf_attr='logit_perf'):
         for k in range(num_plots):
             W = weights[j][k]
             v = inputs[j][k]
-            J = fisher_memory_matrix(W, v)
-            fmc = np.diag(J)
-            fmc /= fmc.max()
+            fmc = fmcs[j][k]
+            
+            if vmax is None:
+                vmax = fmc_max
+            
+            if weight:
+                indx = np.arange(npts) + 2.0
+                w = np.log2(indx)
+                jsum = (w * np.abs(fmc)).sum()
+            else:
+                jsum = fmc.sum()
             
             ax = fig.add_subplot(perrow, percol, k)
             ax.plot(fmc, 'k-')
-            ax.set_title('%0.3f' % fmc.sum())            
+            ax.set_ylim([0, vmax])
+            ax.set_title('%0.3f' % jsum)            
             plt.xticks([], [])
             plt.yticks([], [])
             
@@ -875,16 +975,22 @@ def plot_fmc_by_perf(pdata, perf_attr='logit_perf'):
     plt.show()    
     
 
-def plot_perf_by_jtot(pdata, perf_attr='logit_perf'):
+def plot_perf_by_jtot(pdata, perf_attr='logit_perf', use_dlyap=False, npts=15, weight=False):
     
     perfs = []
     jtots = []
     for m,p in enumerate(pdata):
-        J = fisher_memory_matrix(p.W, p.Win)
+        J = fisher_memory_matrix(p.W, p.Win, use_dlyap=use_dlyap, npts=npts)
         fmc = np.diag(J)
-        #fmc /= fmc.max()
+        fmc[fmc < 0.0] = 0.0
         perfs.append(getattr(p, perf_attr))
-        jtots.append(fmc.sum())
+        if weight:
+            indx = np.arange(npts) + 1.0
+            w = np.log2(indx)
+            jsum = (w * fmc).sum()
+        else:
+            jsum = fmc.sum() 
+        jtots.append(jsum)
     
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -931,20 +1037,19 @@ def plot_perf_by_abscissa(pdata, perf_attr='logit_perf', mean=False):
     plt.show()
     
 
-def plot_perf_by_jsum(pdata, perf_attr='logit_perf'):
+def plot_perf_by_jsum(pdata, perf_attr='logit_perf', use_dlyap=False, use_abs=True, npts=25):
     
     perfs = []
     jtots = []
     for m,p in enumerate(pdata):
-        fname = os.path.join(DATA_DIR, p.file_name)
-        net_key = p.net_key
-        f = h5py.File(fname, 'r')
-        W = np.array(f[net_key]['W'])
-        Win = np.array(f[net_key]['Win']).squeeze()
+        W = p.net.W
+        Win = p.net.Win
         v = Win.squeeze()
-        f.close()
-        J = fisher_memory_matrix(W, v)
-        jusum = np.abs(J[np.triu_indices(len(J))]).sum()
+        J = fisher_memory_matrix(W, v, use_dlyap=use_dlyap, npts=npts)
+        jt_vals = J[np.triu_indices(len(J))] 
+        if use_abs:
+            jt_vals = np.abs(jt_vals)
+        jusum = jt_vals.sum()
         perfs.append(getattr(p, perf_attr))
         jtots.append(jusum)
     
@@ -964,7 +1069,7 @@ def plot_perf_hists(top_net_files):
         perfs = np.array([p.logit_perf for p in pdata])
         
         plt.subplot(len(top_net_files), 1, k+1)
-        plt.hist(perfs, bins=20)
+        plt.hist(perfs, bins=20, facecolor='orange')
         plt.title('%s: mean=%0.2f +/- %0.2f' % (fname, perfs.mean(), perfs.std()))
         plt.xlim((0, 1.00))
     
