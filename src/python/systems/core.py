@@ -7,18 +7,12 @@ Created on Sep 26, 2009
 import numpy as np
 
 class System:
-    def __init__(self, initialState, stepFunc, startParams = None):
+    def __init__(self, initialState, params = None):
         self.initialState = initialState
-        self.stepFunction = stepFunc
-        self.parameters = startParams
+        self.parameters = params
         self.stateShape = initialState.shape
-        self.name = 'Dynamical System'        
-    
-    def valueAt(self, state, t = None, params = None):
-        if (params != None):
-            self.parameters = params
-        return self.stepFunction(state, t)
-    
+        self.name = 'Dynamical System'
+
 
 class ContinuousSystem(System):
     pass
@@ -41,9 +35,7 @@ class SystemInspector:
 
 class LotkaVolterraSystem(ContinuousSystem):    
     
-    def __init__(self, initialState = None):
-        if initialState == None:
-            initialState = np.array([0, 0])
+    def __init__(self, initialState = np.array([0.0, 0.0])):
         System.__init__(self, initialState, self.rhs)
         self.name = 'Lotka-Volterra'
     

@@ -3,7 +3,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 from systems.core import LotkaVolterraSystem
-from systems.neurons import IZNeuron, GenerateStepCurrent, HHNeuron
+from systems.neurons import IZNeuron, GenerateStepCurrent, HHNeuron, FitzHughNagumo, VanderPolOscillator
 from systems.plots import Bounds, PhasePlot
 from systems.simulation import Simulator
 
@@ -88,14 +88,62 @@ def testHHNeuronSimulator(step_size=1e-6, sim_duration=0.030):
     plt.show()
     
     
-def testPhasePlot():    
-    lv = LotkaVolterraSystem(np.array([0.001, 0.001]))
+def test_fitzhugh_nagumo(spacing=0.05, bounds=None, v0=0.0, w0=0.0, dc_current=0.0, solver='RungeKutta4'):
 
-    bnds = Bounds()
-    bnds.xmax = 8
-    bnds.xmin = 0
-    bnds.ymax = 8
-    bnds.ymin = 0
-    
-    pp = PhasePlot(lv, bnds, .25)
+    fn = FitzHughNagumo(np.array([v0, w0]), dc_current)
+
+    if bounds is None:
+        bnds = Bounds()
+        bnds.xmax = 1.0
+        bnds.xmin = -1.0
+        bnds.ymax = 1.0
+        bnds.ymin = -0.5
+    else:
+        bnds = Bounds()
+        bnds.xmin = bounds[0]
+        bnds.xmax = bounds[1]
+        bnds.ymin = bounds[2]
+        bnds.ymax = bounds[3]
+
+    pp = PhasePlot(fn, bnds, spacing)
     pp.renderPlot()
+
+    timestep = 0.01
+    sim = Simulator(fn, timestep)
+
+    dur = 2000.00
+    nsteps = int(dur / timestep)
+    state = list()
+    state.append(fn.initialState)
+    for t in range(nsteps):
+        x = sim.next(solverName=solver)
+        state.append(x)
+
+    state = np.array(state)
+    print 'state.shape=',state.shape
+    plt.figure()
+    plt.plot(state[:, 0], 'k-')
+
+    return state[:, 0]
+
+def test_vanderpol(b=0.5, solver='RungeKutta4'):
+    vdp = VanderPolOscillator(b=b)
+
+    timestep = 1.0
+    sim = Simulator(vdp, timestep)
+
+    dur = 1000000.0
+    nsteps = int(dur / timestep)
+    state = list()
+    state.append(vdp.initialState)
+    for t in range(nsteps):
+        x = sim.next(solverName=solver)
+        state.append(x)
+
+    state = np.array(state)
+    print 'state.shape=',state.shape
+    plt.figure()
+    plt.plot(state[:, 0], 'k-')
+
+    return state[:, 0]
+

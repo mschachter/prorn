@@ -12,7 +12,7 @@ class Simulator:
     def __init__(self, sys, timestep):
         self.system = sys
         self.stepSize = timestep
-        self.time = 0;        
+        self.time = 0        
         self.solvers = {'ForwardEuler': ForwardEuler(), 'BackwardEuler': BackwardEuler(), 'RungeKutta4': RungeKutta4()}
         self.currentValue = self.system.initialState
                         
@@ -20,14 +20,16 @@ class Simulator:
     def next(self, solverName = 'ForwardEuler', stepSize = None):
         
         dt = self.stepSize
-        if (stepSize != None):
+        if stepSize != None:
             dt = stepSize
         
         solver = self.solvers[solverName]
         self.previousValue = self.currentValue        
-        self.currentValue = solver.step(self.system.stepFunction, self.currentValue, self.time, dt)
+        self.currentValue = solver.step(self.system.rhs, self.currentValue, self.time, dt)
         self.time += dt
         #print '[Simulator.next] time={0}:\n\tpreviousValue={1}\n\tcurrentValue={2}'.format(self.time, self.previousValue, self.currentValue)
+
+        return self.currentValue
     
 
 class ForwardEuler:
@@ -73,7 +75,7 @@ class RungeKutta4:
         k3 = rhsFunc(currentVal + 0.5*stepSize*k2, t + 0.5*stepSize)
         k4 = rhsFunc(currentVal + stepSize*k3, t + stepSize)
         
-        nextVal = currentVal + (stepSize*(k1 + 2*k2 + 2*k3 + k4)) / 6;
+        nextVal = currentVal + (stepSize*(k1 + 2*k2 + 2*k3 + k4)) / 6
         
         return nextVal
 

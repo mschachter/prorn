@@ -5,26 +5,25 @@ Created on Oct 11, 2009
 '''
 
 
-from systems.core import System, ContinuousSystem
-
-from numpy.core import array
-import numpy
-
 from math import pi
+import numpy as np
+
+from systems.core import System, ContinuousSystem
 
 
 def GenerateStepCurrent(start, stop, val):
-    ifunc = lambda(t): val if ((t >= start) and (t <= stop)) else 0        
+    ifunc = lambda(t): val if t >= start and t <= stop else 0.0
     return ifunc
 
 
 class Neuron(ContinuousSystem):
-    
-    def __init__(self):
-        self.I = lambda (x): 0
+
+    def __init__(self, initialState):
+        System.__init__(self, initialState)
+        self.I = lambda (x): 0.0
     
     def setCurrentWaveform(self, ifunc):
-        self.I = ifunc    
+        self.I = ifunc
     
     def getOutput(self, outputNeuronId):
         pass
@@ -35,7 +34,7 @@ class IZNeuron(Neuron):
     
     def __init__(self, params = None):
         
-        if (params == None):
+        if params is None:
             params = self.getDefaultParams()
                     
         self.vr = params['restVoltage']
@@ -47,10 +46,10 @@ class IZNeuron(Neuron):
         self.b = params['b']
         self.c = params['c']
         self.d = params['d']        
-        istate = array([self.vr, 0])
+        istate = np.array([self.vr, 0])
 
-        Neuron.__init__(self)
-        System.__init__(self, istate, self.rhs, params)
+        Neuron.__init__(self, istate)
+
 
 
     def getPresynapticVoltage(self, state):
@@ -70,7 +69,7 @@ class IZNeuron(Neuron):
             dv = -v + self.c
             du += self.d
         
-        return array([dv, du])       
+        return np.array([dv, du])
 
 
     def getDefaultParams(self):
@@ -98,7 +97,7 @@ class HHNeuron(Neuron):
         if (params == None):
             params = self.getDefaultParams()
     
-        istate = array([-0.060, 0, 0, 0])
+        istate = np.array([-0.060, 0, 0, 0])
     
         Neuron.__init__(self)
         System.__init__(self, istate, self.rhs, params)
@@ -135,26 +134,26 @@ class HHNeuron(Neuron):
         dh = ratemul * 1e3 * (-(self.alphah(vmV) + self.betah(vmV))*h + self.alphah(vmV));
         dn = ratemul * 1e3 * (-(self.alphan(vmV) + self.betan(vmV))*n + self.alphan(vmV));
         
-        return array([dv, dm, dh, dn])
+        return np.array([dv, dm, dh, dn])
     
 
     def alphah(self, v):
-        return 0.4*numpy.exp( -(v+50)/20 )
+        return 0.4*np.exp( -(v+50)/20 )
     
     def alpham(self, v):         
         y = -.1*(v+30)
 
         if y is not 0:
-            val = 6*y / (numpy.exp(y) - 1);
+            val = 6*y / (np.exp(y) - 1);
         else:
             #interpolate
             v1 = v - .001;
             y1 = -.1*(v1+30);
-            val1 = 6*y1 / (numpy.exp(y1) - 1);
+            val1 = 6*y1 / (np.exp(y1) - 1);
             
             v2 = v - .001;
             y2 = -.1*(v2+30);
-            val2 = 6*y2 / (numpy.exp(y2) - 1);
+            val2 = 6*y2 / (np.exp(y2) - 1);
             
             val = (val1 + val2) / 2;
         
@@ -162,18 +161,18 @@ class HHNeuron(Neuron):
     
     def alphan(self, v): 
         y = -.1*(v+40);
-        val = .2*y / ( numpy.exp(y) - 1);
+        val = .2*y / ( np.exp(y) - 1);
         
         return val
     
     def betah(self, v):
-        return 6 / (numpy.exp( -.1*(v+20) ) + 1)
+        return 6 / (np.exp( -.1*(v+20) ) + 1)
 
     def betam(self, v):
-        return 20*numpy.exp( -(v +55)/18 )
+        return 20*np.exp( -(v +55)/18 )
     
     def betan(self, v):
-        return .4*numpy.exp( -(v+50)/80 );
+        return .4*np.exp( -(v+50)/80 );
         
     def convertCapacitance(self, dia, cm):
         SA = pi*(dia**2) * 1e-6
@@ -211,3 +210,41 @@ class HHNeuron(Neuron):
         params['condmul'] = 1
         
         return params
+
+
+class FitzHughNagumo(Neuron):
+
+    def __init__(self, istate=np.array([0.0, 0.0]), dc_current=0.0):
+
+        Neuron.__init__(self, istate)
+        self.dc_current = dc_current
+        self.I = lambda t: self.dc_current
+
+    def rhs(self, state, t=None):
+        #print 'state={0}'.format(repr(state))
+        v = state[0]
+        w = state[1]
+        iInj = self.I(t)
+        #print 'iInj=%0.3f' % iInj
+        dv = v - v**3 / 3 - w + iInj
+        dw = 0.08*(v + 0.7 - 0.8*w)
+
+        return np.array([dv, dw])
+
+
+
+class VanderPolOscillator(System):
+
+    def __init__(self, b):
+        System.__init__(self, np.array([0.0, 0.0]))
+        self.b = b
+
+    def rhs(self, state, t=None):
+        x = state[0]
+        y = state[1]
+
+        dx = x - x**3 / 3 - y
+        dy = self.b*x
+
+        return np.array([dx, dy])
+

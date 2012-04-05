@@ -1,11 +1,5 @@
-'''
-Created on Oct 1, 2009
-
-@author: mschachter
-'''
-from pylab import *
-from numpy.core import array, arange, zeros
-from numpy.linalg import norm
+import numpy as np
+import matplotlib.pyplot as plt
 
 class Bounds:
     pass
@@ -16,9 +10,9 @@ class Grid:
 class PhasePlot:
     
     def __init__(self, sys, bounds, spacing = None):
-        self.system = sys;
-        self.bounds = bounds;
-        if (spacing == None):
+        self.system = sys
+        self.bounds = bounds
+        if spacing is None:
             spacing = .1
         self.spacing = spacing
         self.grid = Grid()
@@ -27,41 +21,30 @@ class PhasePlot:
         
         
     def constructGrid(self):
-        if self.system.stateShape == (2,):            
-            self.grid.x,self.grid.y = meshgrid(arange(self.bounds.xmin, self.bounds.xmax, self.spacing),
-                                               arange(self.bounds.ymin, self.bounds.ymax, self.spacing));
-        
-        xvals = zeros( (self.grid.x.shape[0], self.grid.x.shape[1]) )
-        yvals = zeros( (self.grid.x.shape[0], self.grid.x.shape[1]) )
-        
-        aclrs = zeros( (self.grid.x.shape[0], self.grid.x.shape[1]) )        
-        
-        for xindx in range(0,self.grid.x.shape[0]):
-            for yindx in range(0,self.grid.x.shape[1]):
-                
-                xpnt = self.grid.x[xindx,yindx]
-                ypnt = self.grid.y[xindx,yindx]                
-                s = array([xpnt,ypnt])
-                sval = self.system.valueAt(s)
-                snorm = norm(sval)
-                sval /= snorm
-                
-                aclrs[xindx,yindx] = snorm                                       
-                xvals[xindx,yindx] = sval[0]
-                yvals[xindx,yindx] = sval[1]
-                
-                #print '({0},{1})=({2},{3})'.format(xpnt, ypnt, sval[0], sval[1])
+        if self.system.stateShape == (2,):
+            X, Y = np.meshgrid(np.arange(self.bounds.xmin, self.bounds.xmax, self.spacing),
+                               np.arange(self.bounds.ymin, self.bounds.ymax, self.spacing))
+            print 'X.shape=',X.shape
+            print 'Y.shape=',Y.shape
 
-        self.xvals = xvals
-        self.yvals = yvals
-        self.aclrs = aclrs;                
-        
+            U = np.zeros(X.shape)
+            V = np.zeros(Y.shape)
+            for i in range(X.shape[0]):
+                for j in range(Y.shape[1]):
+                    x = X[i, j]
+                    y = Y[i, j]
+                    state = np.array([x, y])
+                    dstate = self.system.rhs(state)
+                    #dstate /= np.linalg.norm(dstate)
+                    U[i, j] = dstate[0]
+                    V[i, j] = dstate[1]
+
+            self.X = X
+            self.Y = Y
+            self.U = U
+            self.V = V
+
     def renderPlot(self):
-        
-        figure()                
-        Q = quiver(self.grid.x, self.grid.y, self.xvals, self.yvals, self.aclrs, scale=30)        
-        plot(self.grid.x, self.grid.y, 'ko', markersize=0.75)                
-        axis([self.bounds.xmin, self.bounds.xmax, self.bounds.ymin, self.bounds.ymax])        
-        colorbar()
-        title(self.system.name)
-        show()
+        plt.figure()
+        Q = plt.quiver(self.X, self.Y, self.U, self.V)
+
