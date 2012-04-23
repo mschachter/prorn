@@ -1,4 +1,4 @@
-
+import copy
 import numpy as np
 
 import pyopencl as cl
@@ -17,12 +17,12 @@ __kernel void step(__global const float *a, __global const float *b, __global fl
 kernel_test_cl = r"""
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-__kernel void step(__global const float *state_index, __global const float *param_index,
-                   __global float *state, __global float *params,
-                   __global float *weight_index,
-                   __global float *num_conns, __global float *weights,
+__kernel void step(__global const int *state_index, __global const int *param_index,
+                   __global const float *state, __global const float *params,
+                   __global const int *weight_index, __global const int *conn_index,
+                   __global const int *num_conns, __global const float *weights,
                    __global float *next_state,
-                   __global float step_size)
+                   const float step_size)
 {
 	const uint gpu_index = get_global_id(0);
 	const uint sindex = state_index[gpu_index];
@@ -34,10 +34,17 @@ __kernel void step(__global const float *state_index, __global const float *para
     const uint windex = weight_index[gpu_index];
     const uint nconn = num_conns[gpu_index];
 
-    printf("gpu_index=%d, sindex=%d, pindex=%d, windex=%d, num_conns=%d\n",
-            gpu_index, sindex, pindex, windex, num_conns);
+    /*
+    printf("gpu_index=%d, sindex=%d, pindex=%d, windex=%d, num_conns=%d, step_size=%f\n",
+            gpu_index, sindex, pindex, windex, nconn, step_size);
+    */
 
-    next_state[gpu_index] = ((float) gpu_index) + 2.5;
+    float input = 0.0;
+    for (int k = 0; k < nconn; k++)
+        input += weights[windex+k]*state[conn_index[windex+k]];
+
+    next_state[sindex] = state[sindex] + 1.0;
+    next_state[sindex+1] = input;
 }
 
 """
@@ -58,7 +65,9 @@ class TestUnit(GpuUnit):
         self.param_order = ['a', 'b']
         self.params = {'a':1.0, 'b':5.0}
         self.state = [0.5, 0.75]
-        self.kernel = kernel_test_cl
+
+
+KERNELS = {'TestUnit': kernel_test_cl}
 
 
 class GpuNetworkData(object):
@@ -77,7 +86,10 @@ class GpuNetworkData(object):
 
         self.unit_weight_index = None
         self.weights = None
+        self.conn_index = None
         self.num_connections = None
+
+        self.unit_types = {}
 
 
     def init_units(self, units):
@@ -86,6 +98,7 @@ class GpuNetworkData(object):
         for u in units:
             num_params += len(u.params)
             num_states += len(u.state)
+
         self.num_units = len(units)
         self.num_params = num_params
         self.num_states = num_states
@@ -103,10 +116,15 @@ class GpuNetworkData(object):
             self.unit_state_index[k] = state_index
             self.unit_param_index[k] = param_index
 
+            cname = u.__class__.__name__
+            if cname not in self.unit_types:
+                self.unit_types[cname] = []
+            self.unit_types[cname].append(u.id)
+
             for m,s in enumerate(u.state):
-                self.state[k+m] = s
+                self.state[state_index+m] = s
             for m,pname in enumerate(u.param_order):
-                self.params[k+m] = u.params[pname]
+                self.params[param_index+m] = u.params[pname]
 
             state_index += len(u.state)
             param_index += len(u.params)
@@ -125,6 +143,7 @@ class GpuNetworkData(object):
         self.num_connections = np.zeros(self.num_units, dtype='int32')
         self.unit_weight_index = np.zeros(self.num_units, dtype='int32')
         self.weights = np.zeros(total_num_conns, dtype='float32')
+        self.conn_index = np.zeros(total_num_conns, dtype='float32')
         weight_index = 0
         for uid,uconns in weight_map.iteritems():
             gpu_index = self.unit2gpu[uid]
@@ -132,7 +151,9 @@ class GpuNetworkData(object):
             self.num_connections[gpu_index] = wlen
             self.unit_weight_index[gpu_index] = weight_index
             for m,pre_uid in enumerate(uconns):
+                pre_gpu_index = self.unit2gpu[pre_uid]
                 self.weights[weight_index+m] = weights[(pre_uid, uid)]
+                self.conn_index[weight_index+m] = pre_gpu_index
 
             weight_index += wlen
 
@@ -148,13 +169,34 @@ class GpuNetworkData(object):
 
         self.unit_weight_index_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.unit_weight_index)
         self.weights_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.weights)
+        self.conn_index_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.conn_index)
         self.num_connections_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.num_connections)
 
-    def clear_gpu(self):
-        pass
+    def update_state(self, cl_context, cl_queue):
+        del self.next_state
+        self.next_state = np.empty_like(self.state)
 
-    def copy_from_gpu(self, cl_queue):
+        mf = cl.mem_flags
         cl.enqueue_copy(cl_queue, self.next_state, self.next_state_buf)
+
+        self.state_buf.release()
+        del self.state
+        self.state = copy.copy(self.next_state)
+        self.state_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.state)
+
+    def clear(self):
+        self.unit_param_index_buf.release()
+        self.params_buf.release()
+
+        self.unit_state_index_buf.release()
+        self.state_buf.release()
+        self.next_state_buf.release()
+
+        self.unit_weight_index_buf.release()
+        self.weights_buf.release()
+        self.num_connections_buf.release()
+
+
 
 
 class GpuNetwork(object):
@@ -164,6 +206,7 @@ class GpuNetwork(object):
         self.connections = {}
         self.network_data = None
         self.cl_context = cl_context
+        self.step_size_buf = None
 
     def add_unit(self, u):
         uid = len(self.units)
@@ -179,6 +222,18 @@ class GpuNetwork(object):
         self.network_data.init_units(self.units)
         self.network_data.init_weights(self.connections)
 
+        if len(self.network_data.unit_types) > 1:
+            print 'ERROR: only homogeneous unit types are currently allowed!'
+            return
+
+        self.kernel_cl = KERNELS[self.network_data.unit_types.keys()[0]]
+        self.program = cl.Program(self.cl_context, self.kernel_cl).build()
+        self.kernel = self.program.all_kernels()[0]
+
+        self.queue = cl.CommandQueue(self.cl_context)
+
+        self.network_data.copy_to_gpu(self.cl_context)
+
         print 'unit2gpu,',self.network_data.unit2gpu
         print 'gpu2unit,',self.network_data.gpu2unit
 
@@ -193,27 +248,68 @@ class GpuNetwork(object):
         print 'weights,',self.network_data.weights
         print 'num_connections,',self.network_data.num_connections
 
+
+
     def step(self, step_size):
 
-        self.network_data.copy_to_gpu(self.cl_context)
+        global_size =  (len(self.units), )
+        self.program.step(self.queue, global_size, None,
+                          self.network_data.unit_state_index_buf,
+                          self.network_data.unit_param_index_buf,
+                          self.network_data.state_buf,
+                          self.network_data.params_buf,
+                          self.network_data.unit_weight_index_buf,
+                          self.network_data.conn_index_buf,
+                          self.network_data.num_connections_buf,
+                          self.network_data.weights_buf,
+                          self.network_data.next_state_buf,
+                          np.float32(step_size))
+
+        self.network_data.update_state(self.cl_context, self.queue)
+        return self.network_data.state
 
 
+    def clear(self):
+        self.network_data.clear()
+
+
+def print_device_info():
+
+    ctx = cl.create_some_context()
+    devices = ctx.get_info(cl.context_info.DEVICES)
+    device = devices[0]
+
+    print 'Vendor: %s' % device.vendor
+    print 'Name: %s' % device.name
+    print 'Max Clock Freq: %0.0f' % device.max_clock_frequency
+    gmem = float(device.global_mem_size) / 1024**2
+    print 'Global Memory: %0.0f MB' % gmem
+    print '# of Compute Units: %d' % device.max_compute_units
 
 
 def test_basic():
 
-    gpunet = GpuNetwork()
+    ctx = cl.create_some_context()
+
+    gpunet = GpuNetwork(ctx)
 
     t1 = TestUnit()
-    #t2 = TestUnit()
+    t1.state = [0.25, 0.5]
+    t2 = TestUnit()
+    t2.state = [0.7, 0.9]
 
     gpunet.add_unit(t1)
+    gpunet.add_unit(t2)
+    gpunet.connect(t1.id, t2.id, 0.5)
+
     gpunet.compile()
 
-    ctx = cl.create_some_context()
-    queue = cl.CommandQueue(ctx)
+    nsteps = 5
+    for k in range(nsteps):
+        state = gpunet.step(0.0005)
+        print 'k=%d, state=%s' % (k, str(state))
 
-
+    gpunet.clear()
 
     """
     a = np.random.rand(5).astype(np.float32)
