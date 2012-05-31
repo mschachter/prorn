@@ -7,7 +7,7 @@ import pyopencl as cl
 kernel_fhn_cl = r"""
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-__kernel void step(__global const float *a, __global const float *b, __global float *c)
+__kernel void unit_step(__global const float *a, __global const float *b, __global float *c)
 {
 	const uint gpuId = get_global_id(0);
     printf("gpuId=%d\n", gpuId);
@@ -17,7 +17,7 @@ __kernel void step(__global const float *a, __global const float *b, __global fl
 kernel_test_cl = r"""
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-__kernel void step(__global const int *state_index, __global const int *param_index,
+__kernel void unit_step(__global const int *state_index, __global const int *param_index,
                    __global const float *state, __global const float *params,
                    __global const int *weight_index, __global const int *conn_index,
                    __global const int *num_conns, __global const float *weights,
@@ -253,17 +253,17 @@ class GpuNetwork(object):
     def step(self, step_size):
 
         global_size =  (len(self.units), )
-        self.program.step(self.queue, global_size, None,
-                          self.network_data.unit_state_index_buf,
-                          self.network_data.unit_param_index_buf,
-                          self.network_data.state_buf,
-                          self.network_data.params_buf,
-                          self.network_data.unit_weight_index_buf,
-                          self.network_data.conn_index_buf,
-                          self.network_data.num_connections_buf,
-                          self.network_data.weights_buf,
-                          self.network_data.next_state_buf,
-                          np.float32(step_size))
+        self.program.unit_step(self.queue, global_size, None,
+                               self.network_data.unit_state_index_buf,
+                               self.network_data.unit_param_index_buf,
+                               self.network_data.state_buf,
+                               self.network_data.params_buf,
+                               self.network_data.unit_weight_index_buf,
+                               self.network_data.conn_index_buf,
+                               self.network_data.num_connections_buf,
+                               self.network_data.weights_buf,
+                               self.network_data.next_state_buf,
+                               np.float32(step_size))
 
         self.network_data.update_state(self.cl_context, self.queue)
         return self.network_data.state
@@ -326,7 +326,7 @@ def test_basic():
 
     prg = cl.Program(ctx, fhn_cl).build()
 
-    prg.step(queue, a.shape, None, a_buf, b_buf, dest_buf)
+    prg.unit_step(queue, a.shape, None, a_buf, b_buf, dest_buf)
 
     a_plus_b = np.empty_like(a)
     cl.enqueue_copy(queue, a_plus_b, dest_buf)
