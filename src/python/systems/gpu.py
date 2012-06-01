@@ -1,64 +1,32 @@
 import copy
+import os
 import numpy as np
 
 import pyopencl as cl
 
+import matplotlib.pyplot as plt
 
-kernel_fhn_cl = r"""
-#pragma OPENCL EXTENSION cl_amd_printf : enable
+from prorn.config import get_root_dir
 
-__kernel void unit_step(__global const float *a, __global const float *b, __global float *c)
-{
-	const uint gpuId = get_global_id(0);
-    printf("gpuId=%d\n", gpuId);
-}
-"""
 
-kernel_test_cl = r"""
-#pragma OPENCL EXTENSION cl_amd_printf : enable
-
-__kernel void unit_step(__global const int *state_index, __global const int *param_index,
-                   __global const float *state, __global const float *params,
-                   __global const int *weight_index, __global const int *conn_index,
-                   __global const int *num_conns, __global const float *weights,
-                   __global float *next_state,
-                   const float step_size)
-{
-	const uint gpu_index = get_global_id(0);
-	const uint sindex = state_index[gpu_index];
-	const uint pindex = param_index[gpu_index];
-
-	const uint nstates = 2;
-	const uint nparams = 2;
-
-    const uint windex = weight_index[gpu_index];
-    const uint nconn = num_conns[gpu_index];
-
-    /*
-    printf("gpu_index=%d, sindex=%d, pindex=%d, windex=%d, num_conns=%d, step_size=%f\n",
-            gpu_index, sindex, pindex, windex, nconn, step_size);
-    */
-
-    float input = 0.0;
-    for (int k = 0; k < nconn; k++)
-        input += weights[windex+k]*state[conn_index[windex+k]];
-
-    next_state[sindex] = state[sindex] + 1.0;
-    next_state[sindex+1] = input;
-}
-
-"""
-
+def read_cl(cl_name):
+    cl_dir = os.path.join(get_root_dir(), 'src', 'cl')
+    fname = os.path.join(cl_dir, cl_name)
+    f = open(fname, 'r')
+    cl_str = f.read()
+    f.close()
+    return cl_str
 
 class GpuUnit(object):
     def __init__(self):
         self.param_order = None
         self.params = None
         self.state = None
-        self.kernel = None
 
 
 class TestUnit(GpuUnit):
+    CL_FILE = 'test.cl'
+
     def __init__(self):
         GpuUnit.__init__(self)
 
@@ -67,8 +35,28 @@ class TestUnit(GpuUnit):
         self.state = [0.5, 0.75]
 
 
-KERNELS = {'TestUnit': kernel_test_cl}
+class IFUnit(GpuUnit):
 
+    CL_FILE = 'integrate_and_fire.cl'
+
+    def __init__(self):
+        GpuUnit.__init__(self)
+
+        self.param_order = ['R', 'C', 'vthresh', 'vreset']
+        self.params = {'R':1.0, 'C':1e-2, 'vthresh':1.0, 'vreset':0.0}
+        self.state = [0.27, 0.0] #membrane potential, spike/nospike
+
+KERNELS = {'TestUnit': read_cl(TestUnit.CL_FILE),
+           'IFUnit': read_cl(IFUnit.CL_FILE)}
+
+
+class GpuInputStream(object):
+
+    def __init__(self):
+        self.ndim = None
+
+    def pull(self, t):
+        return None
 
 class GpuNetworkData(object):
 
@@ -90,24 +78,33 @@ class GpuNetworkData(object):
         self.num_connections = None
 
         self.unit_types = {}
+        self.stream_uids = {}
+        self.uids_stream = {}
+
+        self.total_state_size = None
 
 
-    def init_units(self, units):
+    def init_units(self, units, streams, stream_uids):
+
+        self.streams = streams
+
         num_params = 0
         num_states = 0
         for u in units:
             num_params += len(u.params)
             num_states += len(u.state)
 
+        self.stream_uids = stream_uids
         self.num_units = len(units)
         self.num_params = num_params
         self.num_states = num_states
 
         self.unit_state_index = np.zeros(self.num_units, dtype='int32')
         self.unit_param_index = np.zeros(self.num_units, dtype='int32')
-        self.state = np.zeros(self.num_states, dtype='float32')
+        self.state = np.zeros(self.num_states+len(self.stream_uids), dtype='float32')
         self.params = np.zeros(self.num_params, dtype='float32')
 
+        #assign states and parameters to the unit state and parameter arrays
         param_index = 0
         state_index = 0
         for k,u in enumerate(units):
@@ -129,6 +126,16 @@ class GpuNetworkData(object):
             state_index += len(u.state)
             param_index += len(u.params)
 
+        #map the stream inputs to gpu indices
+        for (stream_id,stream_index),suid in self.stream_uids.iteritems():
+            self.uids_stream[suid] = (stream_id,stream_index)
+            self.gpu2unit[state_index] = suid
+            self.unit2gpu[suid] = state_index
+            state_index += 1
+
+        self.total_state_size = state_index
+
+        #set up an array to store the next states
         self.next_state = np.zeros(self.num_states)
 
     def init_weights(self, weights):
@@ -140,10 +147,10 @@ class GpuNetworkData(object):
             weight_map[uid2].append(uid1)
 
         total_num_conns = len(weights)
-        self.num_connections = np.zeros(self.num_units, dtype='int32')
-        self.unit_weight_index = np.zeros(self.num_units, dtype='int32')
-        self.weights = np.zeros(total_num_conns, dtype='float32')
-        self.conn_index = np.zeros(total_num_conns, dtype='float32')
+        self.num_connections = np.zeros(self.num_units, dtype='int32') #holds the number of input connections for each unit
+        self.unit_weight_index = np.zeros(self.num_units, dtype='int32') #the index into the weight array for each unit
+        self.weights = np.zeros(total_num_conns, dtype='float32') #the actual weights
+        self.conn_index = np.zeros(total_num_conns, dtype='int32') #holds the indices of input connections for each unit
         weight_index = 0
         for uid,uconns in weight_map.iteritems():
             gpu_index = self.unit2gpu[uid]
@@ -172,16 +179,26 @@ class GpuNetworkData(object):
         self.conn_index_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.conn_index)
         self.num_connections_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.num_connections)
 
-    def update_state(self, cl_context, cl_queue):
+    def update_state(self, cl_context, cl_queue, time):
         del self.next_state
-        self.next_state = np.empty_like(self.state)
+        self.next_state = np.empty(self.num_states, dtype='float32')
 
         mf = cl.mem_flags
         cl.enqueue_copy(cl_queue, self.next_state, self.next_state_buf)
+        print 'update, next_state=',self.next_state
 
         self.state_buf.release()
         del self.state
-        self.state = copy.copy(self.next_state)
+
+        self.state = np.zeros([self.total_state_size], dtype='float32')
+        self.state[:self.num_states] = self.next_state
+        for s in self.streams:
+            sval = s.pull(time)
+            for sindex in range(s.ndim):
+                skey = (s.id, sindex)
+                suid = self.stream_uids[skey]
+                gpu_index = self.unit2gpu[suid]
+                self.state[gpu_index] = sval[sindex]
         self.state_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.state)
 
     def clear(self):
@@ -197,16 +214,27 @@ class GpuNetworkData(object):
         self.num_connections_buf.release()
 
 
-
-
 class GpuNetwork(object):
 
     def __init__(self, cl_context):
         self.units = []
         self.connections = {}
+        self.stream_connections = {}
         self.network_data = None
         self.cl_context = cl_context
         self.step_size_buf = None
+        self.streams = []
+        self.stream_uids = {}
+        self.time = 0.0
+
+    def add_stream(self, istream):
+        self.streams.append(istream)
+        stream_id = len(self.streams)-1
+        istream.id = stream_id
+        for k in range(istream.ndim):
+            skey = (istream.id, k)
+            uid = -(len(self.stream_uids)+1)
+            self.stream_uids[skey] = uid
 
     def add_unit(self, u):
         uid = len(self.units)
@@ -217,9 +245,16 @@ class GpuNetwork(object):
         ckey = (uid1, uid2)
         self.connections[ckey] = weight
 
+    def connect_stream(self, stream, stream_index, uid, weight):
+        """ Connect an element of an input stream to a unit """
+        skey = (stream.id, stream_index)
+        suid = self.stream_uids[skey]
+        ckey = (suid, uid)
+        self.connections[ckey] = weight
+
     def compile(self):
         self.network_data = GpuNetworkData()
-        self.network_data.init_units(self.units)
+        self.network_data.init_units(self.units, self.streams, self.stream_uids)
         self.network_data.init_weights(self.connections)
 
         if len(self.network_data.unit_types) > 1:
@@ -246,6 +281,7 @@ class GpuNetwork(object):
 
         print 'unit_weight_index,',self.network_data.unit_weight_index
         print 'weights,',self.network_data.weights
+        print 'conn_index,',self.network_data.conn_index
         print 'num_connections,',self.network_data.num_connections
 
 
@@ -265,7 +301,8 @@ class GpuNetwork(object):
                                self.network_data.next_state_buf,
                                np.float32(step_size))
 
-        self.network_data.update_state(self.cl_context, self.queue)
+        self.time += step_size
+        self.network_data.update_state(self.cl_context, self.queue, self.time)
         return self.network_data.state
 
 
@@ -311,25 +348,51 @@ def test_basic():
 
     gpunet.clear()
 
-    """
-    a = np.random.rand(5).astype(np.float32)
-    b = np.random.rand(5).astype(np.float32)
-    
+
+
+class ConstantInputStream(GpuInputStream):
+
+    def __init__(self, amp, start, stop):
+        GpuInputStream.__init__(self)
+        self.ndim = 1
+        self.start = start
+        self.stop = stop
+        self.amp = amp
+
+    def pull(self, t):
+        if t >= self.start and t < self.stop:
+            return np.array([self.amp])
+        else:
+            return np.array([0.0])
+
+
+def test_if():
+
     ctx = cl.create_some_context()
+    gpunet = GpuNetwork(ctx)
 
-    queue = cl.CommandQueue(ctx)
+    u1 = IFUnit()
+    gpunet.add_unit(u1)
 
-    mf = cl.mem_flags
-    a_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    dest_buf = cl.Buffer(ctx, mf.WRITE_ONLY, b.nbytes)
+    instream = ConstantInputStream(0.77, 0.0, 0.003)
+    gpunet.add_stream(instream)
 
-    prg = cl.Program(ctx, fhn_cl).build()
+    gpunet.connect_stream(instream, 0, u1.id, 1.0)
 
-    prg.unit_step(queue, a.shape, None, a_buf, b_buf, dest_buf)
+    gpunet.compile()
 
-    a_plus_b = np.empty_like(a)
-    cl.enqueue_copy(queue, a_plus_b, dest_buf)
+    nsteps = 200
+    step_size = 0.0005
+    all_states = []
+    for k in range(nsteps):
+        state = gpunet.step(step_size)
+        print 'k=%d, state=%s' % (k, str(state))
+        all_states.append(state)
 
-    print np.linalg.norm(a_plus_b - (a+b))
-    """
+    gpunet.clear()
+
+    all_states = np.array(all_states)
+    plt.figure()
+    t = np.arange(0.0, nsteps*step_size, step_size)
+    plt.plot(t, all_states[:, 0], 'k-')
+
