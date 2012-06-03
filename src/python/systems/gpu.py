@@ -129,9 +129,10 @@ class GpuNetworkData(object):
         #map the stream inputs to gpu indices
         for k,((stream_id,stream_index),suid) in enumerate(self.stream_uids.iteritems()):
             self.uids_stream[suid] = (stream_id,stream_index)
-            self.gpu2unit[state_index] = suid
-            self.unit2gpu[suid] = state_index
-            self.unit_state_index[k+self.num_units] = state_index
+            gpu_index = self.num_units + k
+            self.gpu2unit[gpu_index] = suid
+            self.unit2gpu[suid] = gpu_index
+            self.unit_state_index[gpu_index] = state_index
             state_index += 1
 
         self.total_state_size = state_index
@@ -199,7 +200,8 @@ class GpuNetworkData(object):
                 skey = (s.id, sindex)
                 suid = self.stream_uids[skey]
                 gpu_index = self.unit2gpu[suid]
-                self.state[gpu_index] = sval[sindex]
+                state_index = self.unit_state_index[gpu_index]
+                self.state[state_index] = sval[sindex]
         self.state_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.state)
 
     def clear(self):

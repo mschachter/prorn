@@ -33,6 +33,7 @@ __kernel void unit_step(__global const int *state_index, __global const int *par
         next_state[sindex] = 1.0f;
     } else {
         /* integrate synaptic input */
+
         float input = 0.0f;
         float pre_state;
         int pre_index, pre_sindex;
