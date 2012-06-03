@@ -393,13 +393,13 @@ def test_if(nunits=10, sim_dur=0.500):
         gpunet.add_unit(u)
 
     u0 = gpunet.units[0]
-    gpunet.connect_stream(instream, 0, u0, 1.75)
+    gpunet.connect_stream(instream, 0, u0, 2.75)
 
     for k,u in enumerate(gpunet.units[1:]):
         uprev = gpunet.units[k]
         #w = 1.00 / float(k+2)
         #gpunet.connect_stream(instream, 0, u, w)
-        gpunet.connect(uprev, u, 1.0)
+        gpunet.connect(uprev, u, 20.0)
 
     gpunet.compile()
 

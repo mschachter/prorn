@@ -41,10 +41,10 @@ __kernel void unit_step(__global const int *state_index, __global const int *par
             pre_index = conn_index[windex+k];
             pre_sindex = state_index[pre_index];
             pre_state = state[pre_sindex];  /* first state is always the observable one */
-
+            /*
             printf("gpu_index=%d, weights[%d]=%0.6f, pre_index=%d, pre_sindex=%d, input state=%0.6f\n",
                    gpu_index, k, weights[windex+k], pre_index, pre_sindex, pre_state);
-
+            */
             input += weights[windex+k]*pre_state;
         }
         /* update membrane potential and spike state */
