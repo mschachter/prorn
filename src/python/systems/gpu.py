@@ -5,6 +5,7 @@ import numpy as np
 import pyopencl as cl
 
 import matplotlib.pyplot as plt
+import time
 
 from prorn.config import get_root_dir
 
@@ -22,7 +23,6 @@ class GpuUnit(object):
         self.param_order = None
         self.params = None
         self.state = None
-
 
 class TestUnit(GpuUnit):
     CL_FILE = 'test.cl'
@@ -44,7 +44,7 @@ class IFUnit(GpuUnit):
 
         self.param_order = ['R', 'C', 'vthresh', 'vreset']
         self.params = {'R':1.0, 'C':1e-2, 'vthresh':1.0, 'vreset':0.0}
-        self.state = [0.27, 0.0] #membrane potential, spike/nospike
+        self.state = [0.0, 0.0] #spike/nospike, membrane potential
 
 KERNELS = {'TestUnit': read_cl(TestUnit.CL_FILE),
            'IFUnit': read_cl(IFUnit.CL_FILE)}
@@ -99,7 +99,7 @@ class GpuNetworkData(object):
         self.num_params = num_params
         self.num_states = num_states
 
-        self.unit_state_index = np.zeros(self.num_units, dtype='int32')
+        self.unit_state_index = np.zeros(self.num_units+len(self.stream_uids), dtype='int32')
         self.unit_param_index = np.zeros(self.num_units, dtype='int32')
         self.state = np.zeros(self.num_states+len(self.stream_uids), dtype='float32')
         self.params = np.zeros(self.num_params, dtype='float32')
@@ -127,10 +127,11 @@ class GpuNetworkData(object):
             param_index += len(u.params)
 
         #map the stream inputs to gpu indices
-        for (stream_id,stream_index),suid in self.stream_uids.iteritems():
+        for k,((stream_id,stream_index),suid) in enumerate(self.stream_uids.iteritems()):
             self.uids_stream[suid] = (stream_id,stream_index)
             self.gpu2unit[state_index] = suid
             self.unit2gpu[suid] = state_index
+            self.unit_state_index[k+self.num_units] = state_index
             state_index += 1
 
         self.total_state_size = state_index
@@ -162,6 +163,7 @@ class GpuNetworkData(object):
                 self.weights[weight_index+m] = weights[(pre_uid, uid)]
                 self.conn_index[weight_index+m] = pre_gpu_index
 
+
             weight_index += wlen
 
     def copy_to_gpu(self, cl_context):
@@ -185,7 +187,6 @@ class GpuNetworkData(object):
 
         mf = cl.mem_flags
         cl.enqueue_copy(cl_queue, self.next_state, self.next_state_buf)
-        print 'update, next_state=',self.next_state
 
         self.state_buf.release()
         del self.state
@@ -202,16 +203,27 @@ class GpuNetworkData(object):
         self.state_buf = cl.Buffer(cl_context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.state)
 
     def clear(self):
+
         self.unit_param_index_buf.release()
+        del self.unit_param_index_buf
         self.params_buf.release()
+        del self.params_buf
 
         self.unit_state_index_buf.release()
+        del self.unit_state_index_buf
         self.state_buf.release()
+        del self.state_buf
         self.next_state_buf.release()
+        del self.next_state_buf
 
         self.unit_weight_index_buf.release()
+        del self.unit_weight_index_buf
         self.weights_buf.release()
+        del self.weights_buf
+        self.conn_index_buf.release()
+        del self.conn_index_buf
         self.num_connections_buf.release()
+        del self.num_connections_buf
 
 
 class GpuNetwork(object):
@@ -241,15 +253,15 @@ class GpuNetwork(object):
         u.id = uid
         self.units.append(u)
 
-    def connect(self, uid1, uid2, weight):
-        ckey = (uid1, uid2)
+    def connect(self, u1, u2, weight):
+        ckey = (u1.id, u2.id)
         self.connections[ckey] = weight
 
-    def connect_stream(self, stream, stream_index, uid, weight):
+    def connect_stream(self, stream, stream_index, unit, weight):
         """ Connect an element of an input stream to a unit """
         skey = (stream.id, stream_index)
         suid = self.stream_uids[skey]
-        ckey = (suid, uid)
+        ckey = (suid, unit.id)
         self.connections[ckey] = weight
 
     def compile(self):
@@ -366,33 +378,50 @@ class ConstantInputStream(GpuInputStream):
             return np.array([0.0])
 
 
-def test_if():
+def test_if(nunits=10, sim_dur=0.500):
 
     ctx = cl.create_some_context()
     gpunet = GpuNetwork(ctx)
 
-    u1 = IFUnit()
-    gpunet.add_unit(u1)
-
-    instream = ConstantInputStream(0.77, 0.0, 0.003)
+    instream = ConstantInputStream(1.00, 0.020, 0.150)
     gpunet.add_stream(instream)
 
-    gpunet.connect_stream(instream, 0, u1.id, 1.0)
+    for k in range(nunits):
+        u = IFUnit()
+        gpunet.add_unit(u)
+
+    u0 = gpunet.units[0]
+    gpunet.connect_stream(instream, 0, u0, 1.75)
+
+    for k,u in enumerate(gpunet.units[1:]):
+        uprev = gpunet.units[k]
+        #w = 1.00 / float(k+2)
+        #gpunet.connect_stream(instream, 0, u, w)
+        gpunet.connect(uprev, u, 1.0)
 
     gpunet.compile()
 
-    nsteps = 200
-    step_size = 0.0005
+    stime = time.time()
+    step_size = 0.00025
+    nsteps = int(sim_dur / step_size)
     all_states = []
     for k in range(nsteps):
         state = gpunet.step(step_size)
-        print 'k=%d, state=%s' % (k, str(state))
+        #print 'k=%d, state=%s' % (k, str(state))
         all_states.append(state)
+    etime = time.time() - stime
+    print '%0.1fs to stimulate %0.3fs' % (etime, sim_dur)
 
     gpunet.clear()
 
     all_states = np.array(all_states)
     plt.figure()
-    t = np.arange(0.0, nsteps*step_size, step_size)
-    plt.plot(t, all_states[:, 0], 'k-')
+    t = np.arange(0.0, sim_dur, step_size)
+    for k in range(nunits):
+        uindex = k*2
+        st = all_states[:, uindex]
+        v = all_states[:, uindex+1]
+        #print 'k=%d, # of spikes=%d' % (k, st.sum())
+        v[st > 0.0] = 3.0
 
+        plt.plot(t, v)
